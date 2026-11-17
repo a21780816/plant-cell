@@ -231,7 +231,105 @@ body {
   box-shadow: 0 0 0 1.5px #4E7352, 0 2px 8px rgba(60, 50, 30, 0.12);
   font-weight: 650;
 }
+#toolbar button:disabled { opacity: 0.45; cursor: default; }
+#toolbar button:disabled:hover { background: rgba(255, 255, 255, 0.7); border-color: var(--line); }
 #toolbar button:focus-visible { outline: 3px solid rgba(78, 115, 82, 0.45); outline-offset: 2px; }
+
+/* ---- 測驗卡片：畫面上方置中，與介紹面板同一套玻璃質感 ---- */
+#quiz {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  z-index: 3;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  width: min(440px, calc(100vw - 32px));
+  padding: 16px 26px 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  text-align: center;
+  animation: quiz-in 0.28s ease-out;
+}
+#quiz[hidden] { display: none; }
+@keyframes quiz-in {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to { opacity: 1; transform: translateX(-50%); }
+}
+#quiz-progress {
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+}
+#quiz-question {
+  margin-top: 2px;
+  font-size: 22px;
+  line-height: 1.45;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+#quiz-result {
+  min-height: 1.6em; /* 預留一行的高度，揭曉時卡片不會跳動 */
+  margin-top: 6px;
+  font-size: 15px;
+  line-height: 1.6;
+}
+#quiz-result[data-state="right"] { color: #4A7050; }
+#quiz-result[data-state="wrong"] { color: #96503F; }
+#quiz-summary {
+  margin: 2px 0 4px;
+  font-size: 26px;
+  line-height: 1.5;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+}
+#quiz-summary[hidden], #quiz-progress[hidden], #quiz-question[hidden], #quiz-result[hidden], #quiz-retry[hidden] { display: none; }
+#quiz-actions { display: flex; justify-content: center; gap: 10px; }
+#quiz-actions button {
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+#quiz-actions button:hover { background: #fff; border-color: rgba(80, 66, 40, 0.25); }
+#quiz-actions button:focus-visible { outline: 3px solid rgba(78, 115, 82, 0.45); outline-offset: 2px; }
+/* 出題時：結束鈕縮成右上角的小字鈕 */
+#quiz[data-mode="question"] #quiz-exit {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  padding: 2px 10px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+#quiz[data-mode="question"] #quiz-exit:hover { background: rgba(80, 66, 40, 0.08); color: var(--ink); }
+/* 總結時：兩顆都是明顯的按鈕，「再玩一次」是主要動作 */
+#quiz[data-mode="summary"] { padding: 18px 26px 22px; }
+#quiz[data-mode="summary"] #quiz-actions { margin-top: 12px; }
+#quiz[data-mode="summary"] #quiz-actions button { min-width: 112px; padding: 9px 22px; font-size: 16px; }
+#quiz-actions #quiz-retry {
+  border-color: transparent;
+  background: #4E7352;
+  color: #FBF9F4;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  box-shadow: 0 3px 10px rgba(52, 78, 56, 0.28);
+}
+#quiz-actions #quiz-retry:hover { background: #3F6044; border-color: transparent; }
 
 /* ---- 名稱標籤：貼在構造上的小藥丸；容器不攔截滑鼠，只有標籤攔截 ---- */
 #labels {
@@ -289,7 +387,7 @@ body {
 /* 開場時構造清單不顯示；進入探索後淡入（沒有 3D 時 data-phase 不會變成 explore，清單一直不顯示） */
 #list-wrap, #toolbar { transition: opacity 0.5s ease, visibility 0s; }
 body:not([data-phase="explore"]) #list-wrap,
-body:not([data-phase="explore"]) #toolbar { opacity: 0; visibility: hidden; pointer-events: none; }
+body:not([data-phase="explore"]):not([data-phase="quiz"]) #toolbar { opacity: 0; visibility: hidden; pointer-events: none; }
 body:not([data-phase="explore"]) #labels { display: none; }
 
 #intro {

@@ -105,3 +105,80 @@ test('toggleExplode 與 toggleLabels 不影響選取；intro 階段無效', () =
   assert.equal(reduce(initialState, { type: 'toggleExplode' }), initialState);
   assert.equal(reduce(initialState, { type: 'toggleLabels' }), initialState);
 });
+
+// ---- 測驗（Review Focus 3）：每個測試都先 start ----
+test('quizStart：phase 變 quiz；選取與滑過清空、標籤與拆解關閉，原值存進 quiz.saved', () => {
+  let s = reduce(explore, { type: 'toggleLabels' });
+  s = reduce(s, { type: 'toggleExplode' });
+  s = reduce(s, { type: 'select', id: 'nucleus', inst: 0 });
+  s = reduce(s, { type: 'hover', id: 'golgi', inst: 0 });
+  assert.equal(s.labels, true);
+  assert.equal(s.exploded, true);
+  const q = reduce(s, { type: 'quizStart' });
+  assert.equal(q.phase, 'quiz');
+  assert.equal(q.labels, false);
+  assert.equal(q.exploded, false);
+  assert.equal(q.selected, null);
+  assert.equal(q.hovered, null);
+  assert.deepEqual(q.quiz, { saved: { labels: true, exploded: true }, reveal: null });
+  assert.equal(s.phase, 'explore', '不改動傳入的狀態');
+  assert.equal(s.labels, true);
+});
+
+test('quizStart 在 intro 階段無效；已在測驗中再 quizStart 不改變狀態（不覆蓋 saved）', () => {
+  assert.equal(reduce(initialState, { type: 'quizStart' }), initialState);
+  const q = reduce(reduce(explore, { type: 'toggleLabels' }), { type: 'quizStart' });
+  assert.equal(reduce(q, { type: 'quizStart' }), q);
+});
+
+test('測驗中 select、toggleExplode、toggleLabels 不改變狀態；deselect 與 hover 照常', () => {
+  const q = reduce(explore, { type: 'quizStart' });
+  for (const action of [
+    { type: 'select', id: 'nucleus', inst: 0 },
+    { type: 'select', id: 'ribosome' },
+    { type: 'toggleExplode' },
+    { type: 'toggleLabels' },
+  ]) {
+    assert.equal(reduce(q, action), q, `${action.type} 在測驗中應無效`);
+  }
+  const h = reduce(q, { type: 'hover', id: 'vacuole', inst: 1 });
+  assert.deepEqual(h.hovered, { id: 'vacuole', inst: 1 });
+  assert.equal(reduce(h, { type: 'unhover' }).hovered, null);
+});
+
+test('quizExit：回到 explore，還原 labels 與 exploded，quiz 設為 null', () => {
+  let s = reduce(explore, { type: 'toggleLabels' });
+  s = reduce(s, { type: 'toggleExplode' });
+  const q = reduce(s, { type: 'quizStart' });
+  const back = reduce(q, { type: 'quizExit' });
+  assert.equal(back.phase, 'explore');
+  assert.equal(back.labels, true);
+  assert.equal(back.exploded, true);
+  assert.equal(back.quiz, null);
+  assert.equal(back.selected, null);
+  // 測驗中的揭曉也一併清掉
+  const revealing = reduce(q, { type: 'quizReveal', id: 'nucleus', correct: true });
+  assert.equal(reduce(revealing, { type: 'quizExit' }).quiz, null);
+  // 原本都是關的：還原後也是關的
+  const plain = reduce(reduce(explore, { type: 'quizStart' }), { type: 'quizExit' });
+  assert.equal(plain.labels, false);
+  assert.equal(plain.exploded, false);
+  // 探索階段 quizExit 無效；回來之後 select 又有效
+  assert.equal(reduce(explore, { type: 'quizExit' }), explore);
+  assert.deepEqual(reduce(back, { type: 'select', id: 'nucleus', inst: null }).selected, { id: 'nucleus', inst: null });
+});
+
+test('quizReveal 與 quizNext：測驗階段有效、探索與開場階段無效', () => {
+  const q = reduce(explore, { type: 'quizStart' });
+  const r = reduce(q, { type: 'quizReveal', id: 'golgi', correct: false });
+  assert.deepEqual(r.quiz.reveal, { id: 'golgi', correct: false });
+  assert.deepEqual(r.quiz.saved, q.quiz.saved, '揭曉不動 saved');
+  assert.equal(r.phase, 'quiz');
+  const n = reduce(r, { type: 'quizNext' });
+  assert.equal(n.quiz.reveal, null);
+  assert.equal(q.quiz.reveal, null, '不改動傳入的狀態');
+  assert.equal(reduce(explore, { type: 'quizReveal', id: 'golgi', correct: true }), explore);
+  assert.equal(reduce(explore, { type: 'quizNext' }), explore);
+  assert.equal(reduce(initialState, { type: 'quizReveal', id: 'golgi', correct: true }), initialState);
+  assert.equal(reduce(initialState, { type: 'quizNext' }), initialState);
+});

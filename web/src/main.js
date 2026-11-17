@@ -4,7 +4,7 @@ import palette from '../../shared/palette.json';
 import { createScene } from './scene.js';
 import { parseModel, indexModel, findOrganelle, findInstanceRoot } from './model.js';
 import { applyMaterials } from './materials.js';
-import { ORGANELLES, INTRO, getOrganelle } from './organelles.js';
+import { ORGANELLES, INTRO, QUIZ_IDS, getOrganelle } from './organelles.js';
 import { GHOST_IDS, SCALE_IDS } from './config.js';
 import { createStore } from './state.js';
 import { createPicker } from './picking.js';
@@ -13,10 +13,12 @@ import { createCameraMoves } from './camera-moves.js';
 import { createLid, easeInOutCubic } from './lid.js';
 import { createExploder } from './explode.js';
 import { createLabels } from './labels.js';
+import { createQuiz } from './quiz.js';
 import { mountPanel } from './ui/panel.js';
 import { mountList } from './ui/list.js';
 import { mountIntro } from './ui/intro.js';
 import { mountToolbar } from './ui/toolbar.js';
+import { mountQuizUI } from './ui/quiz-ui.js';
 import { placeHoverName } from './ui/hover-name.js';
 
 const canvas = document.getElementById('stage');
@@ -24,6 +26,7 @@ const root = document.documentElement;
 
 const FALLBACK_TEXT = '這個瀏覽器無法顯示 3D 內容，請改用新版的 Chrome 開啟。';
 const IDLE_MS = 4000; // 使用者閒置這麼久才開始自轉
+const REVEAL_MS = 1800; // 測驗：作答後揭曉正確答案的時間
 const EXPLODE_MOVE = { duration: 1, ease: easeInOutCubic }; // 拆解／組合時的鏡頭移動：與模型的伸縮同步，才不會在動畫中途被切出畫面
 
 // 建立 WebGL 失敗：只顯示說明（開場卡片與清單都不出現），並留下錯誤原因供除錯。
@@ -84,7 +87,46 @@ async function main() {
   const toolbar = mountToolbar(document.getElementById('toolbar'), {
     onExplode: () => store.dispatch({ type: 'toggleExplode' }),
     onLabels: () => store.dispatch({ type: 'toggleLabels' }),
+    onQuiz: () => store.dispatch({ type: store.getState().phase === 'quiz' ? 'quizExit' : 'quizStart' }),
   });
+  let toolbarReady = false; // 蓋子完全打開後才啟用工具列（在每格的更新裡檢查）
+
+  // ---- 測驗：題目與分數由 quiz 物件保存（不放進 store）；store 只管「揭曉哪一個」----
+  let quiz = null;
+  let shownId = null; // 畫面上目前這一題的答案（揭曉期間仍是剛作答的那一題）；沒有題目時為 null
+  let revealTimer = 0;
+  const showQuestion = () => {
+    shownId = quiz.currentId;
+    quizUI.showQuestion({ index: quiz.index, total: quiz.total, zh: getOrganelle(shownId).zh });
+  };
+  const startRound = () => {
+    clearTimeout(revealTimer);
+    revealTimer = 0;
+    quiz = createQuiz({ ids: QUIZ_IDS });
+    showQuestion();
+  };
+  const quizUI = mountQuizUI(document.getElementById('quiz'), {
+    onExit: () => store.dispatch({ type: 'quizExit' }),
+    onRetry: () => {
+      if (store.getState().phase === 'quiz') startRound();
+    },
+  });
+  function answerQuiz(h) {
+    const s = store.getState();
+    // 點到空白、揭曉中、已經答完都不算作答（每題只算第一次）
+    if (!h || !quiz || quiz.finished || s.quiz.reveal) return;
+    const { correct, expectedId } = quiz.answer(h.id);
+    store.dispatch({ type: 'quizReveal', id: expectedId, correct });
+    quizUI.showResult({ correct, expectedZh: getOrganelle(expectedId).zh, pickedZh: getOrganelle(h.id).zh });
+    revealTimer = setTimeout(() => {
+      revealTimer = 0;
+      store.dispatch({ type: 'quizNext' });
+      if (quiz.finished) {
+        shownId = null;
+        quizUI.showSummary({ score: quiz.score, total: quiz.total });
+      } else showQuestion();
+    }, REVEAL_MS);
+  }
   const labels = createLabels({
     container: document.getElementById('labels'), index, camera: view.camera, palette,
     nameOf: (id) => getOrganelle(id).zh,
@@ -118,6 +160,7 @@ async function main() {
     onHover: (h) => store.dispatch(h ? { type: 'hover', id: h.id, inst: h.inst } : { type: 'unhover' }),
     onPressChange: () => paintHover(), // 拖曳中隱藏名稱與手指游標
     onPick: (h) => {
+      if (store.getState().phase === 'quiz') { answerQuiz(h); return; }
       if (h) store.dispatch({ type: 'select', id: h.id, inst: h.inst });
       else if (store.getState().selected) store.dispatch({ type: 'deselect' });
     },
@@ -140,10 +183,11 @@ async function main() {
     const h = store.getState().hovered;
     const o = h && getOrganelle(h.id);
     const show = !!o && !picker.pressed;
+    const showName = show && store.getState().phase !== 'quiz'; // 測驗中不顯示名稱（會洩漏答案），游標仍是手指
     if (o) hoverName.textContent = o.zh;
-    hoverName.hidden = !show;
+    hoverName.hidden = !showName;
     canvas.style.cursor = show ? 'pointer' : '';
-    if (show) placeLabel();
+    if (showName) placeLabel();
   }
 
   // ---- 自轉：探索階段、蓋子已打開、沒有選取、沒有鏡頭動畫、使用者閒置滿 4 秒才轉 ----
@@ -176,13 +220,29 @@ async function main() {
       : entry.instances.find((r) => r.userData.inst === sel.inst) ?? entry.rep;
   };
 
-  let prev = { selected: undefined, hovered: undefined, exploded: false, labels: false };
+  let prev = { phase: 'intro', selected: undefined, hovered: undefined, exploded: false, labels: false };
   function render(s) {
     document.body.dataset.phase = s.phase; // 清單等介面依階段顯示（CSS）
     highlighter.apply(s);
     toolbar.setState(s);
     labels.setVisible(s.labels && s.phase === 'explore');
-    if (s.exploded !== prev.exploded) {
+    const enteringQuiz = s.phase === 'quiz' && prev.phase !== 'quiz';
+    const leavingQuiz = s.phase !== 'quiz' && prev.phase === 'quiz';
+    if (enteringQuiz) {
+      noteActivity();
+      list.setNamesHidden(true);
+      startRound();
+    } else if (leavingQuiz) {
+      clearTimeout(revealTimer);
+      revealTimer = 0;
+      quiz = null;
+      shownId = null;
+      quizUI.hide();
+      list.setNamesHidden(false);
+    }
+    if (s.phase !== prev.phase) paintHover();
+    const explodeChanged = s.exploded !== prev.exploded;
+    if (explodeChanged) {
       noteActivity();
       exploder.set(s.exploded);
       { const f = frameOf(s.exploded); view.setFrameBox(f.box, f.extent, f.margin); } // 之後的預設位置（含取消選取、視窗縮放）以這個狀態的外框為準
@@ -202,9 +262,10 @@ async function main() {
         if (exploder.moving) pendingRefocus = true; // 動畫還沒結束，結束時再對準一次
       } else {
         panel.hide();
-        if (prev.selected) moves.home(); // 取消選取：鏡頭回到預設位置
+        if (prev.selected) moves.home(explodeChanged ? EXPLODE_MOVE : undefined); // 取消選取：鏡頭回到預設位置（同時在拆解／組合就用同一段動畫）
       }
     }
+    if (enteringQuiz) moves.home(explodeChanged ? EXPLODE_MOVE : undefined); // 進入測驗：鏡頭平順回到一般（未拆解）的預設位置
     prev = s;
   }
   store.subscribe(render);
@@ -255,6 +316,7 @@ async function main() {
     cameraBusy: () => moves.busy,
     explodeProgress: () => exploder.progress,
     lidOpen: () => lid.isOpen,
+    quizCurrentId: () => shownId,
     autoRotating: () => view.isAutoRotating(),
     hitAt: (x, y) => picker.hitAt(x, y), // 與點選相同規則的射線測試
     screenPointOf,
@@ -290,6 +352,7 @@ async function main() {
       if (target) moves.focus(target);
     }
     lid.update(dt);
+    if (lid.isOpen && !toolbarReady) { toolbarReady = true; toolbar.setReady(true); }
     highlighter.update(dt);
     updateAutoRotate();
     // 鏡頭在動（動畫或阻尼）而游標不動時，滑過狀態要跟著畫面重算；每畫面最多一次

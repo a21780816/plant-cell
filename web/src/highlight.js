@@ -63,7 +63,10 @@ export function createHighlighter(index) {
   let time = 0;
 
   function apply(next) {
-    state = next;
+    // 測驗揭曉：等同「從清單選取正確答案」（該 id 的全部個體發亮、其餘變暗、外殼變殘影）
+    const reveal = next.phase === 'quiz' && next.quiz ? next.quiz.reveal : null;
+    state = reveal ? { ...next, selected: { id: reveal.id, inst: null } } : next;
+    next = state;
     // 選了外殼以外的構造，或拆解中：外殼都變殘影（拆解時外殼是放大的殘影，不可點）
     shellsGhosted = !!next.exploded || (next.selected !== null && !GHOST_IDS.includes(next.selected.id));
   }

@@ -419,3 +419,266 @@ test('名稱標籤：20 個、引線標註、不重疊、可點選、跟著拆�
     await page.close();
   }
 });
+
+// ================= Task 12：測驗 =================
+const visible = (page, sel) => page.evaluate(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); return !!e && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden'; })()`);
+const textOf = (page, sel) => page.evaluate(`document.querySelector(${JSON.stringify(sel)}).textContent`);
+const disabledOf = (page, sel) => page.evaluate(`document.querySelector(${JSON.stringify(sel)}).disabled`);
+const quizId = (page) => page.evaluate('window.__cell.quizCurrentId()');
+const progressText = (page) => textOf(page, '#quiz-progress');
+// 畫面上點得到的構造（排除 except）
+const visibleOther = async (page, except) => {
+  for (const id of QUIZ_IDS) {
+    if (id === except) continue;
+    const p = await page.evaluate(`window.__cell.screenPointOf(${JSON.stringify(id)})`);
+    if (p) return { id, ...p };
+  }
+  throw new Error('畫面上找不到可點的構造');
+};
+// 畫面上沒有任何構造、也沒有介面的位置
+const blankPoint = async (page) => {
+  const p = await page.evaluate(`(() => {
+    const c = document.getElementById('stage');
+    for (let y = 600; y <= 780; y += 30) for (let x = 40; x <= 1240; x += 40) {
+      if (document.elementFromPoint(x, y) === c && window.__cell.hitAt(x, y) === null) return { x, y };
+    }
+    return null;
+  })()`);
+  assert.ok(p, '找不到空白處');
+  return p;
+};
+// 所有網格的自發光強度快照
+const emissiveOf = (page) => page.evaluate(`(() => {
+  const out = {};
+  for (const [id, e] of window.__cell.index.byId) out[id] = e.meshes.map((m) => m.material.emissiveIntensity);
+  return out;
+})()`);
+const maxDelta = (now, before, ids) => Math.max(...ids.flatMap((id) => now[id].map((v, i) => v - before[id][i])));
+
+test('工具列：蓋子還沒完全打開之前三顆按鈕都停用，打開後才啟用', async () => {
+  const page = await open();
+  try {
+    const b = await center(page, '#intro-start');
+    await page.click(b.x, b.y);
+    const snap = () => page.evaluate(`({ open: window.__cell.lidOpen(), d: ['btn-explode', 'btn-labels', 'btn-quiz'].map((id) => document.getElementById(id).disabled) })`);
+    let early = 0;
+    for (let i = 0; i < 400; i++) {
+      const s = await snap();
+      if (s.open) break;
+      early += 1;
+      assert.deepEqual(s.d, [true, true, true], '蓋子還沒打開時三顆按鈕都應停用');
+      await sleep(40);
+    }
+    assert.ok(early >= 3, `應取到蓋子還沒打開的樣本，實際 ${early}`);
+    await page.waitFor('window.__cell.lidOpen() === true');
+    assert.deepEqual((await snap()).d, [false, false, false], '蓋子打開後三顆按鈕可按');
+    assertClean(page);
+  } finally {
+    await page.close();
+  }
+});
+
+test('拆解連續來回三次：每個個體根的位置與縮放回到載入時的值', async () => {
+  const page = await boot();
+  try {
+    await sleep(300);
+    const snap = () => page.evaluate(`(() => {
+      const out = [];
+      for (const [id, e] of window.__cell.index.byId) for (const r of e.instances) out.push([id, r.userData.inst, ...r.position.toArray(), ...r.scale.toArray()]);
+      return out;
+    })()`);
+    const before = await snap();
+    assert.ok(before.length >= 20);
+    for (let i = 0; i < 3; i++) {
+      await clickSel(page, '#btn-explode');
+      await page.waitFor('window.__cell.explodeProgress() === 1', 4000);
+      await clickSel(page, '#btn-explode');
+      await page.waitFor('window.__cell.explodeProgress() === 0', 4000);
+    }
+    assert.equal(await page.evaluate('window.__cell.store.getState().exploded'), false);
+    const after = await snap();
+    assert.equal(after.length, before.length);
+    before.forEach((row, i) => {
+      assert.deepEqual(after[i].slice(0, 2), row.slice(0, 2));
+      for (let k = 2; k < row.length; k++) assert.ok(Math.abs(after[i][k] - row[k]) <= 1e-9, `${row[0]}#${row[1]} 第 ${k} 欄 ${row[k]} → ${after[i][k]}`);
+    });
+    assertClean(page);
+  } finally {
+    await page.close();
+  }
+});
+
+test('測驗：進入時的畫面、先開名稱與拆解會被關閉、在測驗中按 #btn-quiz 等同結束並還原', async () => {
+  const page = await boot();
+  try {
+    await sleep(300);
+    const pose0 = await getPose(page);
+    await clickSel(page, '#btn-labels');
+    await clickSel(page, '#btn-explode');
+    await page.waitFor('window.__cell.explodeProgress() === 1', 4000);
+    await settleCamera(page);
+    await clickList(page, 'golgi');
+    await page.waitFor("window.__cell.store.getState().selected?.id === 'golgi'");
+    await settleCamera(page);
+    assert.equal(await visible(page, '#panel'), true, '選取後介紹面板可見');
+    assert.equal(await pressed(page, '#btn-labels'), 'true');
+
+    await clickSel(page, '#btn-quiz');
+    await page.waitFor("window.__cell.store.getState().phase === 'quiz'");
+    assert.equal(await pressed(page, '#btn-quiz'), 'true');
+    assert.ok((await textOf(page, '#quiz-question')).includes('請點出'), '題目含「請點出」');
+    assert.equal(await progressText(page), '第 1 題／共 10 題');
+    assert.ok(await quizId(page), 'quizCurrentId 有值');
+    assert.equal(await page.evaluate('window.__cell.store.getState().selected'), null);
+    assert.equal(await visible(page, '#panel'), false, '介紹面板隱藏');
+    assert.equal(await page.evaluate("[...document.querySelectorAll('#labels [data-id]')].every((e) => e.getClientRects().length === 0)"), true, '名稱標籤不可見');
+    assert.equal(await pressed(page, '#btn-labels'), 'false', '名稱已關閉');
+    assert.equal(await pressed(page, '#btn-explode'), 'false', '拆解已關閉');
+    assert.equal(await disabledOf(page, '#btn-explode'), true);
+    assert.equal(await disabledOf(page, '#btn-labels'), true);
+    assert.equal(await disabledOf(page, '#btn-quiz'), false);
+    await page.waitFor("getComputedStyle(document.getElementById('list-wrap')).visibility === 'hidden'");
+    assert.equal(await visible(page, '#list-wrap'), false, '清單不可見');
+    assert.equal(await page.evaluate("[...document.querySelectorAll('#list .label')].every((e) => e.getClientRects().length === 0)"), true, '清單上看不到任何構造名稱');
+    assert.equal(await page.evaluate("[...document.querySelectorAll('#list button')].every((b) => !b.hasAttribute('title'))"), true, '沒有 title 提示洩漏名稱');
+    assert.equal(await page.evaluate('window.__cell.autoRotating()'), false);
+    await page.waitFor('window.__cell.explodeProgress() === 0', 4000);
+    await settleCamera(page);
+    nearArr((await getPose(page)).p, pose0.p, 1e-3, '進入測驗後鏡頭回到一般（未拆解）的預設位置');
+    // 滑過構造：游標是手指，但不顯示名稱
+    const some = await visibleOther(page, null);
+    await page.mouseMove(some.x, some.y);
+    await page.waitFor("document.getElementById('stage').style.cursor === 'pointer'");
+    assert.equal(await visible(page, '#hover-name'), false, '測驗中滑過不顯示名稱');
+    await sleep(3500);
+    assert.equal(await page.evaluate('window.__cell.autoRotating()'), false, '測驗中不自轉');
+    // 直接送出 select 不會洩漏：狀態不變
+    await page.evaluate("window.__cell.store.dispatch({ type: 'select', id: 'nucleus', inst: null })");
+    assert.equal(await page.evaluate('window.__cell.store.getState().selected'), null);
+
+    // 再按 #btn-quiz：結束，名稱與拆解還原
+    await clickSel(page, '#btn-quiz');
+    await page.waitFor("window.__cell.store.getState().phase === 'explore'");
+    assert.equal(await visible(page, '#quiz'), false);
+    assert.equal(await pressed(page, '#btn-quiz'), 'false');
+    assert.equal(await pressed(page, '#btn-labels'), 'true', '名稱還原為開');
+    assert.equal(await pressed(page, '#btn-explode'), 'true', '拆解還原為開');
+    assert.equal(await disabledOf(page, '#btn-explode'), false);
+    assert.equal(await page.evaluate('window.__cell.quizCurrentId()'), null);
+    await page.waitFor('window.__cell.explodeProgress() === 1', 4000);
+    await settleCamera(page);
+    await frames(page, 3);
+    assert.ok((await labelInfo(page)).filter((l) => l.shown).length >= 18, '名稱標籤恢復顯示');
+    assert.equal(await page.evaluate('window.__cell.store.getState().selected'), null);
+    assert.equal(await page.evaluate("[...document.querySelectorAll('#list .label')].every((e) => e.getClientRects().length > 0)"), true, '清單名稱恢復');
+    await page.waitFor("getComputedStyle(document.getElementById('list-wrap')).visibility === 'visible'");
+    assertClean(page);
+  } finally {
+    await page.close();
+  }
+});
+
+test('測驗：十題流程、揭曉發亮、空白與揭曉中的點擊不算、總結、再玩一次、結束', async () => {
+  const page = await boot();
+  try {
+    await sleep(300);
+    await clickSel(page, '#btn-quiz');
+    await page.waitFor("window.__cell.store.getState().phase === 'quiz'");
+    await settleCamera(page);
+    await sleep(500);
+    assert.ok((await textOf(page, '#quiz-question')).startsWith('請點出：'));
+    await page.screenshot('assets/preview/web-quiz.png');
+
+    // 點空白處不算作答
+    const blank = await blankPoint(page);
+    await page.click(blank.x, blank.y);
+    await sleep(200);
+    assert.equal(await progressText(page), '第 1 題／共 10 題');
+    assert.equal(await textOf(page, '#quiz-result'), '');
+    assert.equal(await page.evaluate('window.__cell.store.getState().quiz.reveal'), null);
+
+    const seen = [];
+    let correctCount = 0;
+    let wrongCount = 0;
+    for (let i = 0; i < 10; i++) {
+      assert.equal(await progressText(page), `第 ${i + 1} 題／共 10 題`);
+      const id = await quizId(page);
+      assert.ok(QUIZ_IDS.includes(id));
+      seen.push(id);
+      assert.equal(await textOf(page, '#quiz-question'), `請點出：${zh(id)}`);
+      const mine = await page.evaluate(`window.__cell.screenPointOf(${JSON.stringify(id)})`);
+      // 第 1 題一律故意點錯（要驗證答錯的揭曉）；之後能點到答案就點答案，點不到就點別的
+      const wrong = i === 0 || !mine;
+      const target = wrong ? await visibleOther(page, id) : { id, ...mine };
+      const before = i === 0 ? await emissiveOf(page) : null;
+      await page.click(target.x, target.y);
+      await page.waitFor("document.getElementById('quiz-result').textContent !== ''", 3000);
+      const result = await textOf(page, '#quiz-result');
+      if (wrong) {
+        wrongCount += 1;
+        assert.equal(result, `答錯了，你點的是${zh(target.id)}。發亮的才是${zh(id)}。`);
+      } else {
+        correctCount += 1;
+        assert.equal(result, '答對了！');
+      }
+      assert.deepEqual(await page.evaluate('window.__cell.store.getState().quiz.reveal'), { id, correct: !wrong });
+      assert.equal(await page.evaluate('window.__cell.quizCurrentId()'), id, '揭曉期間畫面上仍是這一題');
+      if (i === 0) {
+        await page.waitFor(`(() => { const e = window.__cell.index.byId.get(${JSON.stringify(id)}); return e.meshes.some((m) => m.material.emissiveIntensity > ${Math.max(...before[id])} + 0.15); })()`, 2000);
+        await sleep(250);
+        const now = await emissiveOf(page);
+        const others = Object.keys(now).filter((k) => k !== id);
+        assert.ok(maxDelta(now, before, [id]) > 0.15, '正確的構造自發光明顯增加');
+        assert.ok(maxDelta(now, before, others) < 0.05, '其他構造不發亮');
+        assert.equal(await textOf(page, '#quiz-result'), result, '截圖時仍在揭曉期間');
+        await page.screenshot('assets/preview/web-quiz-wrong.png');
+        assert.equal(await textOf(page, '#quiz-result'), result, '截圖完成時仍在揭曉期間');
+      }
+      if (i === 1) {
+        // 揭曉期間再點別的構造：不改變分數與題號
+        const other = await visibleOther(page, id);
+        await page.click(other.x, other.y);
+        await sleep(150);
+        assert.equal(await progressText(page), `第 ${i + 1} 題／共 10 題`, '揭曉中的點擊不算作答');
+        assert.equal(await textOf(page, '#quiz-result'), result);
+      }
+      if (i < 9) {
+        await page.waitFor(`document.getElementById('quiz-progress').textContent === '第 ${i + 2} 題／共 10 題'`, 4000);
+        assert.equal(await textOf(page, '#quiz-result'), '', '下一題時結果清空');
+        assert.equal(await page.evaluate('window.__cell.store.getState().quiz.reveal'), null);
+      }
+    }
+    assert.equal(new Set(seen).size, 10, '十題不重複');
+    assert.ok(correctCount >= 1 && wrongCount >= 1, `答對與答錯各至少一題：${correctCount}／${wrongCount}`);
+
+    await page.waitFor("!document.getElementById('quiz-summary').hidden", 4000);
+    assert.equal(await textOf(page, '#quiz-summary'), `答對 ${correctCount}／10 題`);
+    assert.equal(await page.evaluate('window.__cell.quizCurrentId()'), null);
+    assert.equal(await visible(page, '#quiz-retry'), true);
+    assert.equal(await visible(page, '#quiz-exit'), true);
+    assert.equal(await textOf(page, '#quiz-retry'), '再玩一次');
+    assert.equal(await textOf(page, '#quiz-exit'), '結束測驗');
+    assert.equal(await page.evaluate('window.__cell.store.getState().quiz.reveal'), null, '總結時發亮已還原');
+    await sleep(700);
+    await page.screenshot('assets/preview/web-quiz-summary.png');
+
+    // 再玩一次：回到第 1 題、重新抽題
+    await clickSel(page, '#quiz-retry');
+    await page.waitFor("document.getElementById('quiz-progress').textContent === '第 1 題／共 10 題'");
+    assert.equal(await visible(page, '#quiz-summary'), false);
+    assert.ok((await textOf(page, '#quiz-question')).startsWith('請點出：'));
+    assert.ok(await quizId(page));
+    assert.equal(await textOf(page, '#quiz-result'), '');
+
+    // 結束測驗：清單名稱恢復
+    await clickSel(page, '#quiz-exit');
+    await page.waitFor("window.__cell.store.getState().phase === 'explore'");
+    assert.equal(await visible(page, '#quiz'), false);
+    assert.equal(await page.evaluate("[...document.querySelectorAll('#list .label')].every((e) => e.getClientRects().length > 0)"), true, '清單名稱恢復');
+    await page.waitFor("getComputedStyle(document.getElementById('list-wrap')).visibility === 'visible'");
+    assert.equal(await page.evaluate('window.__cell.store.getState().selected'), null);
+    assertClean(page);
+  } finally {
+    await page.close();
+  }
+});
