@@ -93,6 +93,7 @@
 - Task 3、4、5 彼此獨立（各自只建立自己的一個檔案），可以同時進行。
 - Task 8（介紹文字）不依賴模型，也不受檢查點一限制，可以提早與 Task 2 到 7 同時進行。
 - **同時進行的任務（3、4、5、8）不自行提交**，完成後回報，由主持人逐一提交。它們只跑自己任務寫明的檢查指令，不跑 `npm test`。
+- Task 8 要在 Task 6 開始前完成並由主持人提交，這樣 Task 6 之後的 `npm test` 才不會掃到半成品。
 - 其餘依編號順序。三個 🛑 檢查點要等使用者確認才往下。
 
 ---
@@ -148,7 +149,7 @@ test('fixture 摘要', () => {
 - Consumes: `scripts/run-blender.mjs`、`scripts/check-model.mjs`、`shared/palette.json`
 - Produces（`common.py`）：
   - 「座標與版面」表的所有常數；`in_cut(p) → bool`；`cavity_sdf(p) → float`（圓角盒的有號距離，負值在空腔內）；`inside_cavity(p, margin=0.0) → bool`（`cavity_sdf(p) <= -margin`）
-  - `validate_layout() → None`：檢查固定位置的構造都在空腔內且兩兩間隙不小於 0.1，不符就 `raise ValueError` 並指出是哪兩個。`build_cell.py` 一開始就呼叫。
+  - `validate_layout() → None`：檢查固定位置的構造都在空腔內且兩兩間隙不小於 0.1，不符就 `raise ValueError` 並指出是哪兩個。粗糙內質網與平滑內質網這一對本來就相連，只檢查兩個扇形區不重疊，不要求間隙。`build_cell.py` 一開始就呼叫。
   - `class PlacementError(RuntimeError)`
   - `class Ctx`：`rng: random.Random`；`is_free(center, radius) → bool`，以下任一成立就回 `False`：不在空腔內（含 `radius`）、進入液泡橢球（半軸各加 `0.15 + radius`）、進入 `NUCLEUS_ZONE`（加 `radius`）、進入 `SER` 禁入區（加 `radius`）、進入任一高基氏體禁入球（加 `radius`）、與任何已 `reserve` 的球重疊；`reserve(name, center, radius) → None`（先以 `is_free` 檢查，不通過就 `raise ValueError`）；`sample_free(radius, want_cut, tries=5000, accept=None) → (x, y, z)`（在空腔內均勻取樣，回傳第一個通過 `is_free`、`in_cut` 等於 `want_cut`、且 `accept(p)` 為真的點；`want_cut` 為真時整顆球都要在掀開區內；試滿仍找不到就 `raise PlacementError`）
   - `new_instance(organelle_id, location) → Object`（Empty，自動編 `inst`，該 id 的第一個自動 `rep: 1`）
@@ -211,7 +212,7 @@ test('fixture 摘要', () => {
 
 - 建立順序：三個代表個體先建（位置依「座標與版面」表），各自 `reserve`；其餘用 `ctx.sample_free` 取位置後 `reserve`。
 - 代表個體**不隨機轉向**：剖面的法線朝 `CAMERA_DIR`，長軸與 `CAMERA_DIR` 垂直。其餘個體隨機轉向，但葉綠體扁的那面朝向最近的細胞膜。
-- 葉綠體只放在靠近細胞膜的皮層：`accept` 要求 `0.54 <= -cavity_sdf(p) <= 1.24`。
+- 葉綠體只放在靠近細胞膜的皮層：`accept` 要求 `-cavity_sdf(p) <= 1.24`（下限已由 `is_free` 的碰撞半徑 0.62 保證）。
 
 - [ ] **Step 1:** 寫 `energy.py`。
 - [ ] **Step 2:** 跑 `node scripts/run-blender.mjs blender/build_cell.py --only energy --preview assets/preview/energy.png`，結束碼 0。
@@ -263,9 +264,9 @@ test('fixture 摘要', () => {
 - Consumes: `assets/plant_cell.glb`、`shared/palette.json`
 - Produces:
   - `scripts/build.mjs`：`build({ minify = true } = {}) → Promise<{ outfile, bytes }>`。esbuild 設定：`bundle`、`format: 'iife'`、loader `{ '.glb': 'binary', '.css': 'text', '.json': 'json' }`。把結果填進 `web/template.html` 的 `<!--STYLE-->` 與 `<!--SCRIPT-->`：填入時用 `replace(標記, () => 內容)` 的函式寫法（避免內容裡的 `$&` 等被當成替換樣式），並把腳本中的 `</script` 跳脫。旗標 `--watch`（原始碼變動就重建）、`--serve`（在 5173 埠提供 `dist/`）。
-  - `scripts/cdp.mjs`：`openPage(target, { width = 1280, height = 800, offline = false, initScript = null } = {}) → Promise<page>`。`target` 是檔案路徑或網址；`initScript` 是在頁面任何腳本之前執行的程式字串。`page`：`evaluate(expr) → Promise<any>`、`waitFor(expr, timeoutMs = 15000)`、`click(x, y)`、`tap(x, y)`（觸控輕點）、`mouseMove(x, y)`、`drag(x1, y1, x2, y2)`、`screenshot(path)`、`consoleErrors: string[]`、`requests: string[]`、`close()`。用 `--headless=new --remote-debugging-port` 啟動 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`，每次在 `.chrome-profile/` 底下用一個不重複的子資料夾當設定檔、`close()` 時刪除，以 Node 內建的 `WebSocket` 走 DevTools Protocol，不裝任何套件。
+  - `scripts/cdp.mjs`：`openPage(target, { width = 1280, height = 800, offline = false, initScript = null } = {}) → Promise<page>`。`target` 是檔案路徑或網址；`initScript` 是在頁面任何腳本之前執行的程式字串。`page`：`evaluate(expr) → Promise<any>`、`waitFor(expr, timeoutMs = 15000)`、`click(x, y)`、`tap(x, y)`（觸控輕點：先啟用 `Emulation.setTouchEmulationEnabled`，再用 `Input.dispatchTouchEvent`）、`mouseMove(x, y)`、`drag(x1, y1, x2, y2)`、`screenshot(path)`、`consoleErrors: string[]`、`requests: string[]`、`close()`。用 `--headless=new --remote-debugging-port` 啟動 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`，每次在 `.chrome-profile/` 底下用一個不重複的子資料夾當設定檔、`close()` 時刪除，以 Node 內建的 `WebSocket` 走 DevTools Protocol，不裝任何套件。
   - `web/src/model.js`：`parseModel(bytes: Uint8Array) → Promise<Object3D>`、`findOrganelle(object) → string | null`（往父層找 `userData.organelle`）、`findInstanceRoot(object) → Object3D | null`（往父層找 `userData.inst !== undefined`）、`indexModel(root) → { byId: Map<string, { meshes, instances, rep, anchor }>, lid: Object3D | null, center: Vector3, radius: number }`（`anchor` 是代表個體底下標 `anchor: 1` 的節點，沒有就等於 `rep`）
-  - `web/src/materials.js`：`applyMaterials(index, palette) → void`，依 `organelle/part` 指定 `MeshPhysicalMaterial`。
+  - `web/src/materials.js`：`applyMaterials(index, palette) → void`，依 `organelle/part` 指定 `MeshPhysicalMaterial`。蓋子底下的網格使用自己的材質實例，不與本體共用（Task 10 要單獨把蓋子淡出）。
   - `web/src/scene.js`：`createScene(canvas) → { renderer, scene, camera, controls, start(onFrame), resize() }`
   - `web/src/main.js`：第一格畫完後設 `document.documentElement.dataset.cellReady = '1'`；失敗時設 `dataset.cellError`。公開 `window.__cell = { index, stats() }`，`stats() → { meshes, unresolved, ids, triangles, fps }`（`unresolved` 是 `findOrganelle` 回傳 null 的網格數）。**本任務把蓋子設為隱藏（`index.lid.visible = false`）**，畫面是掀開的狀態；蓋子的動畫留到 Task 10。
   - DOM：`<canvas id="stage">`。
@@ -319,7 +320,7 @@ test('成品是單一檔案', () => {
 ### Task 8: 介紹文字（可提早進行）
 
 **Files:**
-- Create: `web/src/organelles.js`
+- Create: `web/src/organelles.js`, `web/src/forbidden-words.js`
 - Test: `tests/organelles.test.mjs`
 
 **Interfaces:**
@@ -327,7 +328,7 @@ test('成品是單一檔案', () => {
   - `ORGANELLES: { id, zh, en, tagline, body, fact, pickable }[]`（15 項，順序同 Global Constraints；`fact` 可為 `null`；`pickable` 只有 `cytoplasm` 與 `ribosome` 是 `false`）
   - `ORGANELLE_IDS: string[]`、`QUIZ_IDS: string[]`（`pickable` 為 `true` 的 id）、`getOrganelle(id)`
   - `INTRO: { title: '植物細胞', paragraphs: string[], start: '開始探索' }`
-  - `FORBIDDEN_WORDS: string[]`（Global Constraints 的禁用詞）
+  - `web/src/forbidden-words.js`：`FORBIDDEN_WORDS: string[]`（Global Constraints 的禁用詞）。這個檔只給測試匯入，網頁程式不得匯入它，否則成品裡會出現禁用詞。
 
 - [ ] **Step 1:** 寫失敗測試 `tests/organelles.test.mjs`，長度一律以 `[...s].length` 計：
   - `ORGANELLE_IDS` 等於 15 個 id 的固定順序；每項的 `zh` 與 `en` 等於規格 §5 的對照表（把整張表寫進測試當預期值）。
@@ -430,14 +431,15 @@ test('成品是單一檔案', () => {
 
 **Files:**
 - Create: `web/src/explode.js`, `web/src/labels.js`, `web/src/ui/toolbar.js`
-- Modify: `web/src/state.js`, `web/src/main.js`, `web/template.html`, `web/styles.css`, `tests/state.test.mjs`
+- Modify: `web/src/state.js`, `web/src/highlight.js`, `web/src/main.js`, `web/template.html`, `web/styles.css`, `tests/state.test.mjs`
 - Test: `tests/explode.test.mjs`, `tests/e2e/play.e2e.mjs`
 
 **Interfaces:**
 - Consumes: Task 9 的 `SCALE_IDS`、`GHOST_IDS`、`repScreenPoint`
 - Produces:
   - `state.js`：動作 `toggleExplode`、`toggleLabels`。
-  - `explode.js`：`SPREAD = 0.9`；`EXTRA = { nucleolus: [1.2, 1.0, 1.2] }`；`explodeTarget(position: [x,y,z], center: [x,y,z], id) → [x,y,z]`，等於 `position + (position − center) × SPREAD + (EXTRA[id] ?? [0,0,0])`。`createExploder(index) → { set(on), update(dt), progress: number }`：`SCALE_IDS` 內的構造改為以模型中心放大到 `1 + SPREAD` 倍；其餘個體根依 `explodeTarget` 移動（個體本身大小不變）。拆解時 `GHOST_IDS` 變成殘影（所以不可點）。
+  - `explode.js`：`SPREAD = 0.9`；`EXTRA = { nucleolus: [1.2, 1.0, 1.2] }`；`explodeTarget(position: [x,y,z], center: [x,y,z], id) → [x,y,z]`，等於 `position + (position − center) × SPREAD + (EXTRA[id] ?? [0,0,0])`。`createExploder(index) → { set(on), update(dt), progress: number }`：`SCALE_IDS` 內的構造改為以模型中心放大到 `1 + SPREAD` 倍；其餘個體根依 `explodeTarget` 移動（個體本身大小不變）。
+  - `highlight.js`：`apply(state)` 在 `state.exploded` 為真時也把 `GHOST_IDS` 變成殘影，並讓 `shellsGhosted` 為 `true`（所以拆解中外殼不可點）。
   - `labels.js`：`createLabels({ container, index, camera, nameOf }) → { setVisible(on), update() }`，每個 id 一個標籤，掛在 `byId.get(id).anchor` 上，位置每格更新，在鏡頭背面的不顯示。
   - `ui/toolbar.js`：`mountToolbar(root, { onExplode, onLabels }) → { setState({ exploded, labels, phase }) }`
   - `window.__cell` 增加：`explodeProgress() → number`（0 到 1）。
@@ -446,7 +448,7 @@ test('成品是單一檔案', () => {
 - [ ] **Step 1:** 寫失敗測試 `tests/explode.test.mjs`，數值比較用容差 `1e-9`：`explodeTarget([2,0,0],[0,0,0],'golgi')` 約等於 `[3.8,0,0]`；`explodeTarget([0,0,0],[0,0,0],'vacuole')` 約等於 `[0,0,0]`；`explodeTarget([1,1,1],[1,1,1],'nucleolus')` 約等於 `[2.2,2.0,2.2]`。在 `tests/state.test.mjs` 增加 `toggleExplode`、`toggleLabels` 各切換一次的測試（先 `start`）。跑 `npm test` 確認失敗，實作後通過。
 - [ ] **Step 2:** 實作 `createExploder`、`labels.js`、`toolbar.js` 並接進 `main.js`。
 - [ ] **Step 3:** 寫 `tests/e2e/play.e2e.mjs`（開頭先點 `#intro-start` 並等 `lidOpen()`）：
-  - 記下 `nucleus, golgi, chloroplast, mitochondrion, peroxisome, vacuole` 六者的 `repScreenPoint`。點 `#btn-explode`，3 秒內 `explodeProgress() === 1`；六者任兩個在畫面上的距離都比拆解前大；截圖 `assets/preview/web-exploded.png`。再點一次，`explodeProgress()` 回到 0。
+  - 記下 `nucleus, golgi, chloroplast, mitochondrion, peroxisome, vacuole` 六者的 `repScreenPoint`。點 `#btn-explode`，3 秒內 `explodeProgress() === 1`；六者任兩個在畫面上的距離都比拆解前大；`screenPointOf('cell_wall') === null`（外殼是殘影、不可點）；截圖 `assets/preview/web-exploded.png`。再點一次，`explodeProgress()` 回到 0。
   - 點 `#btn-labels`，`#labels [data-id]` 共 15 個，其中可見的至少 8 個；截圖 `assets/preview/web-labels.png`。再點一次全部隱藏。
 - [ ] **Step 4:** 跑 `npm test && npm run e2e` 通過。用 Read 看兩張截圖：拆解後各構造彼此分開、標籤不互相重疊到無法閱讀。
 - [ ] **Step 5:** 提交（路徑：`web tests`），訊息 `feat: 拆解與名稱標籤`。
@@ -485,7 +487,7 @@ test('成品是單一檔案', () => {
 - [ ] **Step 1:** 寫 `tests/e2e/layout.e2e.mjs`（Review Focus 4）：
   - 以 390×800 開啟並點過開場後，`#stage` 的高度至少是視窗高度的 45%、畫布的繪圖寬高比與顯示寬高比相差小於 1%、選取細胞核後 `#panel` 與 `#stage` 都在視窗內且 `#panel` 位於 `#stage` 下方；截圖 `assets/preview/web-narrow.png`。
   - 以 1280×800 開啟，選取細胞核後 `#panel` 在 `#stage` 內容區的右側。
-  - 讀 `dist/plant-cell.html` 全文，斷言不含 `FORBIDDEN_WORDS` 的任何一個詞。
+  - 讀 `dist/plant-cell.html` 全文，斷言不含 `web/src/forbidden-words.js` 的 `FORBIDDEN_WORDS` 任何一個詞。
 - [ ] **Step 2:** 跑 `npm run e2e` 確認失敗，調整 `styles.css`（寬度小於 720 像素時面板移到下方）與 `resize()`，跑到通過。
 - [ ] **Step 3:** 量測效能：用 `openPage` 以 1280×800 開啟成品，點過開場後等 5 秒，印出 `__cell.stats().fps`。不低於 50 算通過。若無介面 Chrome 的數字不到 50，把數字寫進回報並說明，由主持人在一般的 Chrome 視窗再量一次。
 - [ ] **Step 4:** 離線檢查：把 `dist/plant-cell.html` 複製到一個新的暫存資料夾，用 `openPage(該路徑, { offline: true })` 開啟，斷言 `cellReady === '1'`、`consoleErrors` 為空。
