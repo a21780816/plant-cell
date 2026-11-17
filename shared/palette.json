@@ -3,7 +3,7 @@
   "cell_membrane": { "main": "#F0C75E", "cut": "#F7DE96" },
   "cytoplasm":     { "main": "#D8F0C2" },
   "nucleus":       { "main": "#8D6CC9", "cut": "#C9B3EC", "pore": "#5E4A9A", "chromatin": "#6B4FB0" },
-  "nucleolus":     { "main": "#54348F" },
+  "nucleolus":     { "main": "#A23B8C" },
   "rough_er":      { "main": "#4D7FD6" },
   "smooth_er":     { "main": "#3FB7C4" },
   "ribosome":      { "main": "#2C2A5A" },

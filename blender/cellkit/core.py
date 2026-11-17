@@ -17,7 +17,7 @@ NC = np.array(C.NUCLEUS["center"], dtype=float)
 NR = C.NUCLEUS["radius"]
 SHELL_T = 0.08
 NR_IN = NR - SHELL_T
-RECESS = 0.06  # 核質剖面比核膜切面內凹的深度，讓核膜厚度看得出來
+RECESS = 0.42  # 核質剖面比核膜切面內凹的深度：核膜厚度看得出來，且整顆核仁在剖面前方
 NUCLEOLUS_R = 0.42
 NUCLEOLUS_OFF = np.array((0.15, -0.1, 0.1))
 OCTANT = np.array((1.0, -1.0, 1.0)) / math.sqrt(3.0)  # 切口中心方向（局部）
@@ -322,17 +322,40 @@ def _tube(path, r, sides=6, cap_steps=(35.0, 65.0, 85.0)):
     return np.array(pts), faces
 
 
-def _chromatin_path(rng, nucleolus_c):
-    """纏繞在核仁周圍的一條染色質路徑：以朝切口的方向為中心做李沙育迴圈，半徑 0.6~0.8，再壓回核膜內。"""
-    # 中心方向：切口軸向隨機偏 ≤ 25 度
-    c = OCTANT + rng.normal(size=3) * 0.28
-    c /= np.linalg.norm(c)
+_CAM = np.array(C.CAMERA_DIR, dtype=float) / np.linalg.norm(C.CAMERA_DIR)
+
+
+def _in_front_cylinder(pts, nucleolus_c, radius):
+    """以核仁中心為起點、沿鏡頭方向、半徑 radius 的圓柱（朝鏡頭那一側）內的點的遮罩。"""
+    rel = pts - nucleolus_c
+    t = rel @ _CAM
+    perp = np.linalg.norm(rel - t[:, None] * _CAM, axis=1)
+    return (t > 0) & (perp < radius)
+
+
+def _chromatin_path(rng, nucleolus_c, rmax):
+    """繞在核仁後方與側面的一條染色質路徑：以背向鏡頭的方向為中心做迴圈，半徑約 0.66，再壓回核膜內。
+    路徑若擋在核仁前面（鏡頭方向圓柱內）就重抽。"""
+    for _try in range(200):
+        pts = _chromatin_path_try(rng, nucleolus_c, rmax)
+        if not np.any(_in_front_cylinder(pts, nucleolus_c, rmax + 0.05 + 0.03)):
+            return pts
+    raise ValueError("染色質路徑一直擋在核仁前面")
+
+
+def _chromatin_path_try(rng, nucleolus_c, rmax):
+    # 中心方向：與鏡頭方向夾 95~135 度（側面到後方），方位隨機
+    helper0 = np.array((0.0, 0.0, 1.0))
+    u = np.cross(_CAM, helper0)
+    u /= np.linalg.norm(u)
+    v = np.cross(_CAM, u)
+    th, ph = math.radians(rng.uniform(78, 112)), rng.uniform(0, 2 * math.pi)
+    c = math.cos(th) * _CAM + math.sin(th) * (math.cos(ph) * u + math.sin(ph) * v)
     helper = np.array((0.0, 0.0, 1.0)) if abs(c[2]) < 0.9 else np.array((1.0, 0.0, 0.0))
     e1 = np.cross(c, helper)
     e1 /= np.linalg.norm(e1)
     e2 = np.cross(c, e1)
-    # 振幅偏大：路徑繞在核仁頂端的外圍（約 45~60 度的環），讓核仁頂部露出來
-    amp = rng.uniform(0.95, 1.5)
+    amp = rng.uniform(0.3, 0.6)
     w1 = 1
     w2 = int(rng.choice([1, 1, 2]))
     w3 = int(rng.choice([2, 3]))
@@ -341,7 +364,7 @@ def _chromatin_path(rng, nucleolus_c):
     a1 = amp * (1.0 + 0.18 * np.sin(2 * t + p3))
     d = c[None, :] + a1[:, None] * (np.cos(w1 * t + p1)[:, None] * e1 + np.sin(w2 * t + p2)[:, None] * e2)
     d /= np.linalg.norm(d, axis=1, keepdims=True)
-    r = 0.66 + 0.07 * np.sin(w3 * t + p3)
+    r = 0.64 + 0.06 * np.sin(w3 * t + p3)
     pts = nucleolus_c + d * r[:, None]
     limit = NR_IN - 0.09
     for _ in range(3):  # 壓回核膜內並平滑
@@ -356,14 +379,15 @@ def _chromatin_path(rng, nucleolus_c):
     rel = pts - NC
     dist = np.linalg.norm(rel, axis=1)
     pts = np.where((dist > limit)[:, None], NC + rel * (limit / dist)[:, None], pts)
-    # 離核仁至少 0.58，免得穿進顆粒
+    # 離核仁至少 rmax + 0.09，免得穿進顆粒
+    lo = rmax + 0.09
     rel = pts - nucleolus_c
     dist = np.linalg.norm(rel, axis=1)
-    pts = np.where((dist < 0.58)[:, None], nucleolus_c + rel * (0.58 / dist)[:, None], pts)
+    pts = np.where((dist < lo)[:, None], nucleolus_c + rel * (lo / dist)[:, None], pts)
     return pts
 
 
-def _build_nucleus(ctx):
+def _build_nucleus(ctx, nuc_co):
     rng = np.random.default_rng(ctx.seed + 1)
     rot = _rotation(0.037, 0.021, 0.053)  # 避免網格邊剛好落在切割平面上
 
@@ -404,9 +428,18 @@ def _build_nucleus(ctx):
 
     # --- 染色質 ---
     nuc_c = NC + NUCLEOLUS_OFF
+    rmax = float(np.max(np.linalg.norm(nuc_co - nuc_c, axis=1)))
+    # 核仁必須整顆在三個核質剖面前方（朝切口那一側），且與每個剖面至少留 0.01
+    gaps = (
+        float(np.min(nuc_co[:, 0] - (NC[0] - d))),
+        float(np.min((NC[1] + d) - nuc_co[:, 1])),
+        float(np.min(nuc_co[:, 2] - (NC[2] - d))),
+    )
+    if min(gaps) < 0.01:
+        raise ValueError(f"核仁被核質剖面遮住或太近：與三個剖面的最小間隙 {gaps}")
     cv, cf = [], []
     for _ in range(6):
-        v, f = _tube(_chromatin_path(rng, nuc_c), 0.03)
+        v, f = _tube(_chromatin_path(rng, nuc_c, rmax), 0.03)
         _check_closed_outward("染色質", v, f)
         cf += [[i + len(cv) for i in q] for q in f]
         cv += v.tolist()
@@ -414,6 +447,13 @@ def _build_nucleus(ctx):
     far = float(np.max(np.linalg.norm(chrom_v - NC, axis=1)))
     if far > NR_IN - 0.02:
         raise RuntimeError(f"染色質穿出核膜內側：最遠 {far:.3f}")
+    blocked = int(np.count_nonzero(_in_front_cylinder(chrom_v, nuc_c, rmax + 0.05)))
+    if blocked:
+        raise ValueError(f"染色質擋在核仁前面：鏡頭方向圓柱內有 {blocked} 個頂點")
+    print(
+        f"[core] RECESS {d} 核仁最大半徑 {rmax:.3f} 與三剖面最小間隙 {tuple(round(g, 3) for g in gaps)}；"
+        f"染色質圓柱內頂點 {blocked}、離核膜內表面最小距離 {NR_IN - far:.3f}"
+    )
 
     objs = {
         "main": _make_obj("nucleus_main", main_v, main_f),
@@ -435,7 +475,7 @@ def _build_nucleus(ctx):
 # ----------------------------------------------------------------------------
 # 核仁
 # ----------------------------------------------------------------------------
-def _build_nucleolus(ctx):
+def _nucleolus_geometry(ctx):
     rng = np.random.default_rng(ctx.seed + 2)
     v, f = _ico(1.0, 5)
     n = len(v)
@@ -456,6 +496,10 @@ def _build_nucleolus(ctx):
     h = np.clip(h, 0.0, 0.07)
     co = NC + NUCLEOLUS_OFF + v * (NUCLEOLUS_R + h)[:, None]
     _check_closed_outward("核仁", co, f)
+    return co, f
+
+
+def _build_nucleolus(co, f):
     obj = _make_obj("nucleolus_main", co, f)
     root = C.new_instance("nucleolus", _bbox_center(co))
     C.add_part(root, obj, "main")
@@ -467,8 +511,9 @@ def _build_nucleolus(ctx):
 # ----------------------------------------------------------------------------
 def build(ctx):
     _vco, v_anchor, v_center = _build_vacuole(ctx)
-    n_center, n_anchor, pore_n = _build_nucleus(ctx)
-    nu_center = _build_nucleolus(ctx)
+    nuc_co, nuc_f = _nucleolus_geometry(ctx)
+    n_center, n_anchor, pore_n = _build_nucleus(ctx, nuc_co)
+    nu_center = _build_nucleolus(nuc_co, nuc_f)
     tris = {
         o.name: _tri_count(o) for o in bpy.data.objects if o.type == "MESH"
     }
