@@ -68,7 +68,7 @@
 {
   "cell_wall":            { "main": "#CFC2A3", "cut": "#E3D9BF", "neighbor": "#BDB196" },
   "middle_lamella":       { "main": "#8E7F63", "cut": "#A39474" },
-  "cell_membrane":        { "main": "#E2A77A", "cut": "#EFC4A2" },
+  "cell_membrane":        { "main": "#F1DEC6", "cut": "#E2A77A" },
   "cytoplasm":            { "main": "#EDE6D3" },
   "nucleus":              { "main": "#A396B8", "cut": "#CBC2D8", "pore": "#7E7096", "chromatin": "#6F6289" },
   "nucleolus":            { "main": "#B56B95" },
