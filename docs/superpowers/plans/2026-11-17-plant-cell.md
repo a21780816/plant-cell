@@ -54,7 +54,7 @@
 | `GOLGI` | `[(-0.3, -2.2, 0.2), (-3.3, -2.1, -1.5)]`，第一個是代表個體；禁入球半徑 `0.75` |
 | 代表個體位置 | 葉綠體 `(-1.2, -2.4, 1.7)`、粒線體 `(0.9, -2.5, -0.7)`、過氧化體 `(0.5, -2.6, 1.6)` |
 | `OIL_BODY_REP` | 油體代表個體的位置 `(3.9, -2.0, -0.9)`；禁入球半徑 `OIL_BODY_KEEPOUT = 0.22` |
-| `STRANDS` | 三條跨液泡細胞質絲，各以「通過點相對液泡中心的偏移 `off`、方向 `dir`」定義：`{off: (0, 0, 0.3), dir: (0.80, -0.55, 0.25)}`、`{off: (0.3, 0, -0.4), dir: (0.35, -0.35, 0.87)}`、`{off: (-0.4, 0.2, 0.2), dir: (0.45, -0.75, -0.48)}`。端點取在液泡橢球值等於 `STRAND_END_LEVEL = 1.10` 處。驗算得到的端點（近端／遠端）：`(0.37, -0.46, 0.72)`／`(-3.72, 2.36, -0.56)`、`(-0.39, -0.01, 1.67)`／`(-2.01, 1.61, -2.36)`、`(-0.80, -0.90, -1.28)`／`(-2.86, 2.54, 0.92)` |
+| `STRANDS` | 三條跨液泡細胞質絲，各以「通過點相對液泡中心的偏移 `off`、方向 `dir`」定義：`{off: (0.3, -0.2, 0.9), dir: (0.85, -0.50, 0.15)}`、`{off: (-1.3, 0.3, 0.1), dir: (0.20, -0.45, 0.87)}`、`{off: (0.5, 0.3, -0.6), dir: (0.55, -0.80, -0.05)}`。端點取在液泡橢球值等於 `STRAND_END_LEVEL = 1.10` 處。驗算得到的端點（近端／遠端）：`(0.36, -0.27, 0.99)`／`(-3.88, 2.21, 0.25)`、`(-2.45, 0.18, 1.87)`／`(-3.26, 2.02, -1.69)`、`(0.19, -0.68, -0.92)`／`(-2.29, 2.94, -0.69)`。三條的中心線兩兩最近距離是 0.54、1.56、1.41（已驗算）；第 0、2 條的近端在掀開區內、從預設鏡頭看得到 |
 | `CAMERA_DIR` | `(0.62, -0.62, 0.48)`（預設鏡頭所在方向；剖面一律朝這個方向） |
 | `SEED` | `20261117` |
 
@@ -89,7 +89,7 @@
 }
 ```
 
-改版後的配色（教科書插畫的柔和色調）。兩個過渡用的鍵：`nucleus.chromatin` 由 Task 15 移除，`cytoskeleton` 由 Task 16 移除；在那之前留著是為了讓尚未改版的模組還能建置。
+改版後的配色（教科書插畫的柔和色調）。兩個過渡用的鍵 `nucleus.chromatin` 與 `cytoskeleton` 都由 Task 17 移除；在那之前留著是為了讓尚未改版的模組還能建置。Task 15、16 不得修改 `shared/palette.json`。
 
 ## Review Focus
 
@@ -107,6 +107,7 @@
 - **同時進行的任務（3、4、5、8）不自行提交**，完成後回報，由主持人逐一提交。它們只跑自己任務寫明的檢查指令，不跑 `npm test`。
 - Task 8 要在 Task 6 開始前完成並由主持人提交，這樣 Task 6 之後的 `npm test` 才不會掃到半成品。
 - 改版任務：Task 14 先做；Task 15 與 16 彼此獨立，可在 Task 14 完成後同時進行（不自行提交）；Task 17 在兩者都提交後做。Task 18（介紹重寫）與 Task 7（網頁檢視器）都不依賴模型的版面，可與改版任務同時進行；Task 18 不自行提交。
+- 多個任務同時進行時，每位實作者只跑自己任務寫明的指令與測試檔；`git commit` 若遇到 `index.lock` 就等幾秒重試。
 - 檢查點一在 Task 17 與 Task 7 都完成後進行：主持人重建成品、重跑端對端檢查並看過截圖，再交給使用者。
 - 其餘依編號順序。三個 🛑 檢查點要等使用者確認才往下。
 
@@ -281,12 +282,13 @@ Task 1 到 6 是照改版前的規格完成的。以下任務把模型改成規�
 - Consumes: 既有的 `common.py` 介面與 `build_cell.py`
 - Produces（`common.py` 的變更）。**其他三個模組用到的既有名稱不得消失：改之前先 grep `core.py`、`energy.py`、`endomembrane.py` 用了 `common` 的哪些名稱，全部保留可用。**
   - 新常數照「座標與版面」表：`HEX_TIP_X`、`HEX_SHOULDER_X`、`HEX_HALF_Y`、`HEX_HALF_Z`、`EDGE_BEVEL`、`LAMELLA_T`、`NEIGHBOR_WALL_T`、`FLANGE_LEN`、`OIL_BODY_REP`、`OIL_BODY_KEEPOUT`、`STRANDS`、`STRAND_END_LEVEL`。`CELL_HALF` 改為 `(6.6, 3.5, 3.2)`；`CAVITY_HALF` 改為空腔的外接半寬（由公式算出，約 `(6.162, 3.12, 2.82)`）。
-  - `cavity_sdf(p)`：改為六角柱空腔，`max(|z| − 2.82, |y| − 3.12, (3.5·|x| + 2.0·|y|)/√(3.5² + 2.0²) − h)`，`h` 由「斜面通過 `(4.6, 3.5)` 再內縮 0.38」算出（約 5.3504）。數值都由常數推導，不要寫死。`inside_cavity`、`in_cut` 的介面不變。
+  - `cavity_sdf(p)`：必須同時接受單點（回傳 `float`）與形狀 `(N, 3)` 的 numpy 陣列（回傳長度 N 的陣列），因為 Task 16 要用它對大量頂點做判斷。內容改為六角柱空腔，`max(|z| − 2.82, |y| − 3.12, (3.5·|x| + 2.0·|y|)/√(3.5² + 2.0²) − h)`，`h` 由「斜面通過 `(4.6, 3.5)` 再內縮 0.38」算出（約 5.3504）。數值都由常數推導，不要寫死。`inside_cavity`、`in_cut` 的介面不變。
   - `hex_vertices() → [(x, y)] × 6`：本細胞的細胞壁外表面六個頂點，逆時針，從 `(6.6, 0)` 開始。
   - `flange_dirs() → [(dx, dy)] × 6`：每條直立稜上相鄰細胞壁朝外伸出的單位方向（該頂點兩條鄰邊的外角平分線），順序同 `hex_vertices()`。
   - `strand_ends(i) → (near, far)`：第 `i` 條細胞質絲的兩個端點。直線通過「`VACUOLE` 中心加 `STRANDS[i]['off']`」、方向為 `STRANDS[i]['dir']`（正規化），往正反兩個方向各走到液泡橢球值（`|(p − 中心) / 半軸|`）等於 `STRAND_END_LEVEL` 的點；正方向那個是 `near`。算出的值要與「座標與版面」表列的端點相符（誤差 0.01 內）。
-  - `Ctx.sample_free` 的取樣範圍改用新的 `CAVITY_HALF`。`Ctx.is_free` 增加一個禁入球：球心 `OIL_BODY_REP`、半徑 `OIL_BODY_KEEPOUT`（加 `radius`）。
-  - `validate_layout` 增加：`OIL_BODY_REP` 滿足 `inside_cavity(p, OIL_BODY_KEEPOUT)` 且與其他固定構造的間隙不小於 0.1；三條細胞質絲的六個端點都滿足 `inside_cavity(p, 0.15)`、距細胞核中心都大於 `NUCLEUS_ZONE` 加 0.1。
+  - 圓角盒時代的 `rbox_sdf`、`CORNER_R`、`CAVITY_R` 三個名稱原樣保留（`endomembrane.py` 目前還在用，Task 16 才會把那些地方改成 `cavity_sdf`）；`common.py` 自己不再用它們判斷空腔。
+  - `Ctx.sample_free` 的取樣範圍改用新的 `CAVITY_HALF`。`Ctx.is_free` 增加兩種禁入區：球心 `OIL_BODY_REP`、半徑 `OIL_BODY_KEEPOUT` 的球（加 `radius`）；以及三條細胞質絲的線段（`strand_ends(i)` 的 `near` 到 `far`），與任一條線段的距離小於 `0.16 + radius` 就不可用。
+  - `validate_layout` 的「在空腔內」檢查一律改用 `cavity_sdf`。另增加：三條細胞質絲的線段與其他固定構造（`NUCLEUS_ZONE`、兩個高基氏體、三個代表個體、`OIL_BODY_REP`）的間隙扣掉管半徑 0.16 後不小於 0.1，三條線段兩兩最近距離不小於 0.4；`OIL_BODY_REP` 滿足 `inside_cavity(p, OIL_BODY_KEEPOUT)` 且與其他固定構造的間隙不小於 0.1；三條細胞質絲的六個端點都滿足 `inside_cavity(p, 0.15)`、距細胞核中心都大於 `NUCLEUS_ZONE` 加 0.1。
 - Produces（`shared/palette.json`）：改成本計畫「配色」一節的內容（含兩個過渡用的鍵）。
 
 **外殼規格（`shell.py`，取代 Task 2 的表）。** 每一層都是六角柱形，稜線帶 `EDGE_BEVEL` 的小倒角，每一面是平的（不再是圓角盒）：
@@ -301,6 +303,7 @@ Task 1 到 6 是照改版前的規格完成的。以下任務把模型改成規�
 | `plasmodesmata` | 16 條貫穿「本細胞的壁、中膠層、相鄰細胞的壁」三層的短管（半徑 0.07），兩端有小環；至少 3 條落在切面上被剖開。合併成一個網格 | `main` | 其中一條被剖開的管子上 |
 
 - 相鄰細胞的壁標 `organelle: cell_wall`、`part: neighbor`，掛在 `cell_wall` 的同一個個體根底下。
+- 原生質絲被掀開區切到的那幾條：留在本體這一側的半截連同切口都屬於 `plasmodesmata` 的 `main`；蓋子那一側不另外建立原生質絲。
 - 以上每一層（含伸出的六片）都切掉掀開區，切面各自獨立成 `cut`。被切掉的部分（細胞膜、兩種壁、中膠層都要）放在蓋子根節點下，蓋回去要密合。
 - 外殼的三角面上限是 60,000。
 
@@ -325,9 +328,10 @@ Task 1 到 6 是照改版前的規格完成的。以下任務把模型改成規�
 |---|---|---|---|
 | `nucleus` | 幾何不變；染色質不再屬於它 | `main`, `cut`, `pore` | 不變 |
 | `chromatin` | 原本的染色質網格改成獨立的構造：自己的個體根（放在染色質的幾何中心）。幾何與既有的檢查（不穿出核膜、不擋在核仁前面）都保留 | `main` | 從切口看得到的一段染色質上 |
-| `transvacuolar_strand` | 3 條穿過液泡的細管，合併成一個網格、一個個體。每條從 `strand_ends(i)` 的 `near` 到 `far`；中段半徑 0.09，兩端最後 0.35 的長度內平順地張開到半徑 0.16；路徑是略帶 S 形的平滑曲線，離直線的橫向偏移不超過 0.25 | `main` | 第 0 條的 `near` 端 |
+| `transvacuolar_strand` | 3 條穿過液泡的細管，合併成一個網格、一個個體。每條從 `strand_ends(i)` 的 `near` 到 `far`；中段半徑 0.09，兩端最後 0.35 的長度內平順地張開到半徑 0.16；路徑是略帶 S 形的平滑曲線，離直線的橫向偏移不超過 0.10 | `main` | 第 0 條的 `near` 端 |
 
-- `build` 裡的自我檢查（不過就丟 `ValueError`）：每條絲去掉兩端各 0.4 之後的中段，所有頂點都在液泡橢球內；每條絲的所有頂點都滿足 `inside_cavity(p, 0.05)`、距細胞核中心都大於 `NUCLEUS_ZONE`。
+- `build` 裡的自我檢查（不過就丟 `ValueError`）：每條絲去掉兩端各 0.4 之後的中段，所有頂點都在液泡橢球內；每條絲的所有頂點都滿足 `inside_cavity(p, 0.05)`、距細胞核中心都大於 `NUCLEUS_ZONE`；不同條絲的頂點之間最近距離不小於 0.2。
+- `nucleus` 不再使用 `chromatin` 這個 part（改用 `chromatin` 這個 id 的 `main`）。本任務不得修改 `shared/palette.json`。
 - 這個模組的三角面上限是 56,000。
 
 - [ ] **Step 1:** 修改 `core.py`。
@@ -350,7 +354,9 @@ Task 1 到 6 是照改版前的規格完成的。以下任務把模型改成規�
 | `actin_filament` | 取代 `cytoskeleton` 的微絲：12 條，半徑 0.012，從皮層伸向細胞核附近，略彎。一個個體、一個網格 | `main` | 掀開區內看得到的一條的中點 |
 | `oil_body` | 5 顆光滑的球，半徑 0.17 到 0.21。第 0 顆（代表）放在 `OIL_BODY_REP`，是固定位置，不呼叫 `reserve`；其餘 4 顆用 `sample_free(0.22, …)`（其中 1 顆在掀開區）取位置並 `reserve`。每顆一個個體 | `main` | 無 |
 
-- 模型裡不再有 `cytoskeleton` 這個 id。微管與微絲都不得穿過液泡（半軸各加 0.15）與 `NUCLEUS_ZONE`；既有的自我檢查改成分別檢查這兩個構造。
+- 建立順序：先建 5 顆油體（其中 4 顆 `reserve`），再建微管與微絲，讓微管與微絲用 `ctx.is_free` 避開油體與細胞質絲的端點。
+- 把 `endomembrane.py` 裡所有用 `rbox_sdf`、`CAVITY_R`、`CAVITY_HALF` 判斷「是否在空腔內」的地方（粗糙內質網的範圍限制與 `_cavity_ok` 等自我檢查）改成用 `cavity_sdf`，讓它們檢查的是六角柱空腔。
+- 模型裡不再有 `cytoskeleton` 這個 id（palette 裡的 `cytoskeleton` 鍵由 Task 17 移除，本任務不得修改 `shared/palette.json`）。微管與微絲都不得穿過液泡（半軸各加 0.15）與 `NUCLEUS_ZONE`；既有的自我檢查改成分別檢查這兩個構造。
 - 其餘構造（粗糙內質網、核糖體、平滑內質網、高基氏體）的幾何與檢查不變。
 - 這個模組的三角面上限是 104,000。
 
@@ -587,6 +593,7 @@ test('成品是單一檔案', () => {
 - Produces:
   - `state.js`：動作 `toggleExplode`、`toggleLabels`。
   - `explode.js`：`SPREAD = 0.9`；`EXTRA = { nucleolus: [1.2, 1.0, 1.2] }`；`explodeTarget(position: [x,y,z], center: [x,y,z], id) → [x,y,z]`，等於 `position + (position − center) × SPREAD + (EXTRA[id] ?? [0,0,0])`。`createExploder(index) → { set(on), update(dt), progress: number }`：`SCALE_IDS` 內的構造改為以模型中心放大到 `1 + SPREAD` 倍；其餘個體根依 `explodeTarget` 移動（個體本身大小不變）。
+  - `explode.js`：`FOLLOW = { chromatin: 'nucleus', transvacuolar_strand: 'vacuole' }`。`FOLLOW` 裡的構造不自己算位移，而是跟著它所屬構造的代表個體做完全相同的位移（染色質留在細胞核裡、細胞質絲留在液泡裡）。
   - `highlight.js`：`apply(state)` 在 `state.exploded` 為真時也把 `GHOST_IDS` 變成殘影，並讓 `shellsGhosted` 為 `true`（所以拆解中外殼不可點）。
   - `labels.js`：`createLabels({ container, index, camera, nameOf }) → { setVisible(on), update() }`，每個 id 一個標籤，掛在 `byId.get(id).anchor` 上，位置每格更新，在鏡頭背面的不顯示。
   - `ui/toolbar.js`：`mountToolbar(root, { onExplode, onLabels }) → { setState({ exploded, labels, phase }) }`
@@ -596,7 +603,7 @@ test('成品是單一檔案', () => {
 - [ ] **Step 1:** 寫失敗測試 `tests/explode.test.mjs`，數值比較用容差 `1e-9`：`explodeTarget([2,0,0],[0,0,0],'golgi')` 約等於 `[3.8,0,0]`；`explodeTarget([0,0,0],[0,0,0],'vacuole')` 約等於 `[0,0,0]`；`explodeTarget([1,1,1],[1,1,1],'nucleolus')` 約等於 `[2.2,2.0,2.2]`。在 `tests/state.test.mjs` 增加 `toggleExplode`、`toggleLabels` 各切換一次的測試（先 `start`）。跑 `npm test` 確認失敗，實作後通過。
 - [ ] **Step 2:** 實作 `createExploder`、`labels.js`、`toolbar.js` 並接進 `main.js`。
 - [ ] **Step 3:** 寫 `tests/e2e/play.e2e.mjs`（開頭先點 `#intro-start` 並等 `lidOpen()`）：
-  - 記下 `nucleus, golgi, chloroplast, mitochondrion, peroxisome, vacuole` 六者的 `repScreenPoint`。點 `#btn-explode`，3 秒內 `explodeProgress() === 1`；六者任兩個在畫面上的距離都比拆解前大；`screenPointOf('cell_wall') === null`（外殼是殘影、不可點）；截圖 `assets/preview/web-exploded.png`。再點一次，`explodeProgress()` 回到 0。
+  - 記下 `nucleus, golgi, chloroplast, mitochondrion, peroxisome, vacuole` 六者的 `repScreenPoint`。點 `#btn-explode`，3 秒內 `explodeProgress() === 1`；六者任兩個在畫面上的距離都比拆解前大；`screenPointOf('cell_wall') === null`（外殼是殘影、不可點）；`chromatin` 與 `nucleus` 的 `repScreenPoint` 之間的距離與拆解前相差不到 2 像素（`FOLLOW`）；截圖 `assets/preview/web-exploded.png`。再點一次，`explodeProgress()` 回到 0。
   - 點 `#btn-labels`，`#labels [data-id]` 共 20 個，其中可見的至少 10 個；截圖 `assets/preview/web-labels.png`。再點一次全部隱藏。
 - [ ] **Step 4:** 跑 `npm test && npm run e2e` 通過。用 Read 看兩張截圖：拆解後各構造彼此分開、標籤不互相重疊到無法閱讀。
 - [ ] **Step 5:** 提交（路徑：`web tests`），訊息 `feat: 拆解與名稱標籤`。
