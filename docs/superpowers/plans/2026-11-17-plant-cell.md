@@ -56,6 +56,7 @@
 | `OIL_BODY_REP` | 油體代表個體的位置 `(3.9, -2.0, -0.9)`；禁入球半徑 `OIL_BODY_KEEPOUT = 0.22` |
 | `STRANDS` | 三條跨液泡細胞質絲，各以「通過點相對液泡中心的偏移 `off`、方向 `dir`」定義：`{off: (0.3, -0.2, 0.9), dir: (0.85, -0.50, 0.15)}`、`{off: (-1.3, 0.3, 0.1), dir: (0.20, -0.45, 0.87)}`、`{off: (0.5, 0.3, -0.6), dir: (0.55, -0.80, -0.05)}`。端點取在液泡橢球值等於 `STRAND_END_LEVEL = 1.10` 處。驗算得到的端點（近端／遠端）：`(0.36, -0.27, 0.99)`／`(-3.88, 2.21, 0.25)`、`(-2.45, 0.18, 1.87)`／`(-3.26, 2.02, -1.69)`、`(0.19, -0.68, -0.92)`／`(-2.29, 2.94, -0.69)`。三條的中心線兩兩最近距離是 0.54、1.56、1.41（已驗算）；第 0、2 條的近端在掀開區內、從預設鏡頭看得到 |
 | `CAMERA_DIR` | `(0.62, -0.62, 0.48)`（預設鏡頭所在方向；剖面一律朝這個方向） |
+| `SHOWCASE` | 從預設鏡頭必須看得到、不可被隨機擺放的胞器擋住的構造，各以（球心、半徑）表示：細胞核 `(NUCLEUS 中心, 1.15)`、葉綠體代表 `(…, 0.62)`、粒線體代表 `(…, 0.48)`、過氧化體代表 `(…, 0.25)`、第一個高基氏體 `(GOLGI[0], 0.70)`、油體代表 `(OIL_BODY_REP, 0.22)`。每個構造朝 `CAMERA_DIR` 方向延伸出去的圓柱稱為它的視線走廊。已模擬：加上「隨機擺放的胞器不得進入視線走廊」之後，300 組種子全部仍放得下 |
 | `SEED` | `20261117` |
 
 - 匯出後 Blender 的 `(x, y, z)` 變成 three.js 的 `(x, z, -y)`。預設鏡頭在 three.js 的 `(0.62, 0.48, 0.62)` 方向，正對掀開的那一角。
@@ -288,7 +289,8 @@ Task 1 到 6 是照改版前的規格完成的。以下任務把模型改成規�
   - `strand_ends(i) → (near, far)`：第 `i` 條細胞質絲的兩個端點。直線通過「`VACUOLE` 中心加 `STRANDS[i]['off']`」、方向為 `STRANDS[i]['dir']`（正規化），往正反兩個方向各走到液泡橢球值（`|(p − 中心) / 半軸|`）等於 `STRAND_END_LEVEL` 的點；正方向那個是 `near`。算出的值要與「座標與版面」表列的端點相符（誤差 0.01 內）。
   - 圓角盒時代的 `rbox_sdf`、`CORNER_R`、`CAVITY_R` 三個名稱原樣保留（`endomembrane.py` 目前還在用，Task 16 才會把那些地方改成 `cavity_sdf`）；`common.py` 自己不再用它們判斷空腔。
   - `Ctx.sample_free` 的取樣範圍改用新的 `CAVITY_HALF`。`Ctx.is_free` 增加兩種禁入區：球心 `OIL_BODY_REP`、半徑 `OIL_BODY_KEEPOUT` 的球（加 `radius`）；以及三條細胞質絲的線段（`strand_ends(i)` 的 `near` 到 `far`），與任一條線段的距離小於 `0.16 + radius` 就不可用。
-  - `validate_layout` 的「在空腔內」檢查一律改用 `cavity_sdf`。另增加：三條細胞質絲的線段與其他固定構造（`NUCLEUS_ZONE`、兩個高基氏體、三個代表個體、`OIL_BODY_REP`）的間隙扣掉管半徑 0.16 後不小於 0.1，三條線段兩兩最近距離不小於 0.4；`OIL_BODY_REP` 滿足 `inside_cavity(p, OIL_BODY_KEEPOUT)` 且與其他固定構造的間隙不小於 0.1；三條細胞質絲的六個端點都滿足 `inside_cavity(p, 0.15)`、距細胞核中心都大於 `NUCLEUS_ZONE` 加 0.1。
+  - `SHOWCASE`（見「座標與版面」表）與 `Ctx.is_free(center, radius, respect_view=True)`：`respect_view` 為真時（預設），若 `center` 落在任一 `SHOWCASE` 構造的視線走廊內就回 `False`。判斷方式：令 `v = center − 球心`、`t = v·d`（`d` 是正規化的 `CAMERA_DIR`），當 `t > 0` 且 `v` 垂直於 `d` 的分量長度小於「該構造的半徑 + radius」時視為在走廊內。`sample_free` 一律以 `respect_view=True` 取樣。
+  - `validate_layout` 的「在空腔內」檢查一律改用 `cavity_sdf`。另檢查：`SHOWCASE` 的每個構造都不在別的 `SHOWCASE` 構造的視線走廊內。另增加：三條細胞質絲的線段與其他固定構造（`NUCLEUS_ZONE`、兩個高基氏體、三個代表個體、`OIL_BODY_REP`）的間隙扣掉管半徑 0.16 後不小於 0.1，三條線段兩兩最近距離不小於 0.4；`OIL_BODY_REP` 滿足 `inside_cavity(p, OIL_BODY_KEEPOUT)` 且與其他固定構造的間隙不小於 0.1；三條細胞質絲的六個端點都滿足 `inside_cavity(p, 0.15)`、距細胞核中心都大於 `NUCLEUS_ZONE` 加 0.1。
 - Produces（`shared/palette.json`）：改成本計畫「配色」一節的內容（含兩個過渡用的鍵）。
 
 **外殼規格（`shell.py`，取代 Task 2 的表）。** 每一層都是六角柱形，稜線帶 `EDGE_BEVEL` 的小倒角，每一面是平的（不再是圓角盒）：
