@@ -250,11 +250,14 @@ def _emit(oid, p, R, radius, pieces):
         world[part] = (W, F)
         allv.append(W)
     allv = np.vstack(allv)
+    # 讓包圍盒中心正好落在 p：個體根、保留球心、包圍盒中心三者一致
+    shift = p - (allv.min(0) + allv.max(0)) / 2
+    allv = allv + shift
+    world = {k: (W + shift, F) for k, (W, F) in world.items()}
     far = float(np.max(np.linalg.norm(allv - p, axis=1)))
     if far > radius + 1e-6:
         raise ValueError(f"{oid}：幾何超出碰撞半徑（{far:.4f} > {radius}）")
-    center = (allv.min(0) + allv.max(0)) / 2
-    root = C.new_instance(oid, tuple(float(x) for x in center))
+    root = C.new_instance(oid, tuple(float(x) for x in p))
     order = ["main", "cut"] + [k for k in world if k not in ("main", "cut")]
     for part in order:
         if part not in world:
