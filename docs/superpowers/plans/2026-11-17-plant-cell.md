@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-17-plant-cell-design.md`
 
-**修訂紀錄：** 2026-11-17 經獨立審查後修訂（版面座標重排並驗算、蓋子處理、拆解斷言、並行規則等 21 項）。
+**修訂紀錄：** 2026-11-17 經獨立審查後修訂（版面座標重排並驗算、蓋子處理、拆解斷言、並行規則等 21 項）。同日依規格 §11 改版：六角柱外形、20 項構造、柔和配色、大學程度的介紹；新增 Task 14 到 18，Task 7、9、11 的相關數值同步更新。Task 1 到 6 與 Task 8 是照改版前的內容完成的，它們的段落保留作為紀錄。
 
 ## Global Constraints
 
@@ -26,9 +26,10 @@
   - 網格：`organelle`（id）、`part`（字串，預設 `"main"`），必須是某個個體根節點或蓋子根節點的子孫。
   - 錨點（Empty，可有可無）：代表個體根底下一個標 `anchor: 1` 的 Empty，是名稱標籤與鏡頭靠近的目標點。沒有就用個體根的位置。
   - 蓋子根節點（Empty）：`lid: 1`，底下只放外殼被掀開的那一角。
-- 15 個 id，順序固定：`cell_wall, cell_membrane, cytoplasm, nucleus, nucleolus, rough_er, smooth_er, ribosome, golgi, mitochondrion, chloroplast, vacuole, peroxisome, plasmodesmata, cytoskeleton`。
+- 20 個 id，順序固定：`cell_wall, middle_lamella, cell_membrane, cytoplasm, nucleus, nucleolus, chromatin, rough_er, smooth_er, ribosome, golgi, mitochondrion, chloroplast, vacuole, transvacuolar_strand, peroxisome, oil_body, plasmodesmata, microtubule, actin_filament`。（改版前是 15 個：沒有 `middle_lamella`、`chromatin`、`transvacuolar_strand`、`oil_body`，且 `microtubule` 與 `actin_filament` 合為 `cytoskeleton`。）
+- 不能在模型上直接點選、只能從清單選的 7 個 id：`middle_lamella, cytoplasm, chromatin, ribosome, transvacuolar_strand, microtubule, actin_filament`。其餘 13 個可點選，也是測驗的題庫。
 - 預算：三角面總數硬上限 500,000（目標 300,000 以內）；`assets/plant_cell.glb` ≤ 15 MB；`dist/plant-cell.html` ≤ 25 MB；這台電腦上 ≥ 50 fps。
-- 介面文字用繁體中文、台灣課本用語。15 項的清單標題叫「細胞構造」，不叫「胞器」。禁用詞：線粒體、高爾基體、胞間連絲、溶酶體、溶體、中心粒、中心體、細胞器。
+- 介面文字用繁體中文、台灣的學術用語（以國家教育研究院的學術名詞為準）。20 項的清單標題叫「細胞構造」，不叫「胞器」。禁用詞：線粒體、高爾基體、胞間連絲、溶酶體、溶體、中心粒、中心體、細胞器。
 - 生物學：不畫中心粒、不畫溶體。液泡刻意縮小，介紹裡要寫明。
 - 字體只用系統字體：`-apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif`。
 - git 只在本機，絕不 push。提交用 `git add <明確路徑>` 接 `git commit -m "…" -- <同樣的路徑>`；禁止 `git add -A`、reset、rebase、amend。
@@ -40,9 +41,10 @@
 
 | 常數 | 值 |
 |---|---|
-| `CELL_HALF` | `(5.0, 3.5, 3.2)`，指細胞壁外表面；外圓角 `CORNER_R = 1.0` |
+| 外形（改版後） | 六角柱。本細胞的細胞壁外表面：頂點 `(±6.6, 0)`、`(±4.6, ±3.5)`，高度 `±3.2`。`HEX_TIP_X = 6.6`、`HEX_SHOULDER_X = 4.6`、`HEX_HALF_Y = 3.5`、`HEX_HALF_Z = 3.2`；稜線倒角 `EDGE_BEVEL = 0.06`。（改版前是 `CELL_HALF = (5.0, 3.5, 3.2)`、外圓角 1.0 的圓角盒。） |
 | `WALL_T` / `GAP` / `MEMBRANE_T` | `0.28` / `0.04` / `0.06` |
-| 空腔（細胞膜內側） | 半寬 `(4.62, 3.12, 2.82)`（`CELL_HALF` 各減 0.38），內圓角 `0.62` |
+| `LAMELLA_T` / `NEIGHBOR_WALL_T` / `FLANGE_LEN` | `0.06` / `0.28` / `1.5`（中膠層厚、相鄰細胞的壁厚、六條直立稜上相鄰細胞壁伸出的長度） |
+| 空腔（細胞膜內側，改版後） | 六角柱各面內縮 0.38：`\|z\| ≤ 2.82`、`\|y\| ≤ 3.12`、`(3.5·\|x\| + 2.0·\|y\|)/4.0311 ≤ 5.3504`。已驗算它完整包含改版前的圓角盒空腔（半寬 `(4.62, 3.12, 2.82)`、內圓角 `0.62`），所以下面的固定位置全部沿用。 |
 | 掀開區 `in_cut(p)` | `p.x >= -2.2 and p.y <= 0.8 and p.z >= -1.4` |
 | `VACUOLE` | 中心 `(-1.6, 0.9, -0.2)`，半軸 `(2.7, 1.95, 2.1)`，表面起伏振幅上限 `0.10` |
 | `NUCLEUS` | 中心 `(2.7, -0.6, 0.6)`，半徑 `1.15` |
@@ -51,6 +53,8 @@
 | `SER` | 繞細胞核的扇形區：軸 `(0.35, -0.45, -0.8)`，方向與軸的內積 > 0.55，距核心 `1.35` 到 `1.95`。禁入區取內積 > 0.5、半徑 `2.05` |
 | `GOLGI` | `[(-0.3, -2.2, 0.2), (-3.3, -2.1, -1.5)]`，第一個是代表個體；禁入球半徑 `0.75` |
 | 代表個體位置 | 葉綠體 `(-1.2, -2.4, 1.7)`、粒線體 `(0.9, -2.5, -0.7)`、過氧化體 `(0.5, -2.6, 1.6)` |
+| `OIL_BODY_REP` | 油體代表個體的位置 `(3.9, -2.0, -0.9)`；禁入球半徑 `OIL_BODY_KEEPOUT = 0.22` |
+| `STRANDS` | 三條跨液泡細胞質絲，各以「通過點相對液泡中心的偏移 `off`、方向 `dir`」定義：`{off: (0, 0, 0.3), dir: (0.80, -0.55, 0.25)}`、`{off: (0.3, 0, -0.4), dir: (0.35, -0.35, 0.87)}`、`{off: (-0.4, 0.2, 0.2), dir: (0.45, -0.75, -0.48)}`。端點取在液泡橢球值等於 `STRAND_END_LEVEL = 1.10` 處。驗算得到的端點（近端／遠端）：`(0.37, -0.46, 0.72)`／`(-3.72, 2.36, -0.56)`、`(-0.39, -0.01, 1.67)`／`(-2.01, 1.61, -2.36)`、`(-0.80, -0.90, -1.28)`／`(-2.86, 2.54, 0.92)` |
 | `CAMERA_DIR` | `(0.62, -0.62, 0.48)`（預設鏡頭所在方向；剖面一律朝這個方向） |
 | `SEED` | `20261117` |
 
@@ -61,23 +65,31 @@
 
 ```json
 {
-  "cell_wall":     { "main": "#86B94A", "cut": "#B5D97A" },
-  "cell_membrane": { "main": "#F0C75E", "cut": "#F7DE96" },
-  "cytoplasm":     { "main": "#D8F0C2" },
-  "nucleus":       { "main": "#8D6CC9", "cut": "#C9B3EC", "pore": "#5E4A9A", "chromatin": "#6B4FB0" },
-  "nucleolus":     { "main": "#A23B8C" },
-  "rough_er":      { "main": "#4D7FD6" },
-  "smooth_er":     { "main": "#3FB7C4" },
-  "ribosome":      { "main": "#2C2A5A" },
-  "golgi":         { "main": "#F29E4C", "vesicle": "#F7C27E" },
-  "mitochondrion": { "main": "#E2553D", "cut": "#F4A58C", "cristae": "#C43C2A" },
-  "chloroplast":   { "main": "#3E9B3E", "cut": "#9BD36A", "grana": "#1F6B2E" },
-  "vacuole":       { "main": "#9FD8F2" },
-  "peroxisome":    { "main": "#E86FA0", "cut": "#F6B5CC", "core": "#B23A6E" },
-  "plasmodesmata": { "main": "#2E8B6F" },
-  "cytoskeleton":  { "main": "#D9D4F0", "filament": "#F2C6D8" }
+  "cell_wall":            { "main": "#CFC2A3", "cut": "#E3D9BF", "neighbor": "#BDB196" },
+  "middle_lamella":       { "main": "#8E7F63", "cut": "#A39474" },
+  "cell_membrane":        { "main": "#E2A77A", "cut": "#EFC4A2" },
+  "cytoplasm":            { "main": "#EDE6D3" },
+  "nucleus":              { "main": "#A396B8", "cut": "#CBC2D8", "pore": "#7E7096", "chromatin": "#6F6289" },
+  "nucleolus":            { "main": "#B56B95" },
+  "chromatin":            { "main": "#6F6289" },
+  "rough_er":             { "main": "#5E9FA0" },
+  "smooth_er":            { "main": "#7DB6A8" },
+  "ribosome":             { "main": "#2F5560" },
+  "golgi":                { "main": "#7A6A62", "vesicle": "#D9A0A0" },
+  "mitochondrion":        { "main": "#D98B45", "cut": "#F0C08E", "cristae": "#B5652B" },
+  "chloroplast":          { "main": "#8FA95B", "cut": "#C5D69A", "grana": "#55783A" },
+  "vacuole":              { "main": "#DAD8E6" },
+  "transvacuolar_strand": { "main": "#B9C7B0" },
+  "peroxisome":           { "main": "#9DB3C7", "cut": "#C9D6E2", "core": "#6E869C" },
+  "oil_body":             { "main": "#A65A3C" },
+  "plasmodesmata":        { "main": "#7F9A84" },
+  "microtubule":          { "main": "#5D7F6B" },
+  "actin_filament":       { "main": "#8B8FA0" },
+  "cytoskeleton":         { "main": "#5D7F6B", "filament": "#8B8FA0" }
 }
 ```
+
+改版後的配色（教科書插畫的柔和色調）。兩個過渡用的鍵：`nucleus.chromatin` 由 Task 15 移除，`cytoskeleton` 由 Task 16 移除；在那之前留著是為了讓尚未改版的模組還能建置。
 
 ## Review Focus
 
@@ -94,6 +106,8 @@
 - Task 8（介紹文字）不依賴模型，也不受檢查點一限制，可以提早與 Task 2 到 7 同時進行。
 - **同時進行的任務（3、4、5、8）不自行提交**，完成後回報，由主持人逐一提交。它們只跑自己任務寫明的檢查指令，不跑 `npm test`。
 - Task 8 要在 Task 6 開始前完成並由主持人提交，這樣 Task 6 之後的 `npm test` 才不會掃到半成品。
+- 改版任務：Task 14 先做；Task 15 與 16 彼此獨立，可在 Task 14 完成後同時進行（不自行提交）；Task 17 在兩者都提交後做。Task 18（介紹重寫）與 Task 7（網頁檢視器）都不依賴模型的版面，可與改版任務同時進行；Task 18 不自行提交。
+- 檢查點一在 Task 17 與 Task 7 都完成後進行：主持人重建成品、重跑端對端檢查並看過截圖，再交給使用者。
 - 其餘依編號順序。三個 🛑 檢查點要等使用者確認才往下。
 
 ---
@@ -254,6 +268,137 @@ test('fixture 摘要', () => {
 - [ ] **Step 4:** 用 Read 看 `assets/preview/full.png`：從掀開的一角看得到液泡、細胞核切口、粗糙內質網的層層邊緣、平滑內質網、代表高基氏體、剖開的葉綠體與粒線體；沒有構造穿出細胞膜。不符就修。
 - [ ] **Step 5:** 提交（路徑：`blender tests/model.test.mjs`），訊息 `feat: 完整模型與預算檢查`。
 
+## 改版任務（2026-11-17，依規格 §11）
+
+Task 1 到 6 是照改版前的規格完成的。以下任務把模型改成規格 §11 的樣子；介紹文字的重寫在 Task 18。
+
+### Task 14: 外殼改版（六角柱、三層壁、相鄰細胞壁）
+
+**Files:**
+- Modify: `blender/cellkit/common.py`, `blender/cellkit/shell.py`, `shared/palette.json`
+
+**Interfaces:**
+- Consumes: 既有的 `common.py` 介面與 `build_cell.py`
+- Produces（`common.py` 的變更）。**其他三個模組用到的既有名稱不得消失：改之前先 grep `core.py`、`energy.py`、`endomembrane.py` 用了 `common` 的哪些名稱，全部保留可用。**
+  - 新常數照「座標與版面」表：`HEX_TIP_X`、`HEX_SHOULDER_X`、`HEX_HALF_Y`、`HEX_HALF_Z`、`EDGE_BEVEL`、`LAMELLA_T`、`NEIGHBOR_WALL_T`、`FLANGE_LEN`、`OIL_BODY_REP`、`OIL_BODY_KEEPOUT`、`STRANDS`、`STRAND_END_LEVEL`。`CELL_HALF` 改為 `(6.6, 3.5, 3.2)`；`CAVITY_HALF` 改為空腔的外接半寬（由公式算出，約 `(6.162, 3.12, 2.82)`）。
+  - `cavity_sdf(p)`：改為六角柱空腔，`max(|z| − 2.82, |y| − 3.12, (3.5·|x| + 2.0·|y|)/√(3.5² + 2.0²) − h)`，`h` 由「斜面通過 `(4.6, 3.5)` 再內縮 0.38」算出（約 5.3504）。數值都由常數推導，不要寫死。`inside_cavity`、`in_cut` 的介面不變。
+  - `hex_vertices() → [(x, y)] × 6`：本細胞的細胞壁外表面六個頂點，逆時針，從 `(6.6, 0)` 開始。
+  - `flange_dirs() → [(dx, dy)] × 6`：每條直立稜上相鄰細胞壁朝外伸出的單位方向（該頂點兩條鄰邊的外角平分線），順序同 `hex_vertices()`。
+  - `strand_ends(i) → (near, far)`：第 `i` 條細胞質絲的兩個端點。直線通過「`VACUOLE` 中心加 `STRANDS[i]['off']`」、方向為 `STRANDS[i]['dir']`（正規化），往正反兩個方向各走到液泡橢球值（`|(p − 中心) / 半軸|`）等於 `STRAND_END_LEVEL` 的點；正方向那個是 `near`。算出的值要與「座標與版面」表列的端點相符（誤差 0.01 內）。
+  - `Ctx.sample_free` 的取樣範圍改用新的 `CAVITY_HALF`。`Ctx.is_free` 增加一個禁入球：球心 `OIL_BODY_REP`、半徑 `OIL_BODY_KEEPOUT`（加 `radius`）。
+  - `validate_layout` 增加：`OIL_BODY_REP` 滿足 `inside_cavity(p, OIL_BODY_KEEPOUT)` 且與其他固定構造的間隙不小於 0.1；三條細胞質絲的六個端點都滿足 `inside_cavity(p, 0.15)`、距細胞核中心都大於 `NUCLEUS_ZONE` 加 0.1。
+- Produces（`shared/palette.json`）：改成本計畫「配色」一節的內容（含兩個過渡用的鍵）。
+
+**外殼規格（`shell.py`，取代 Task 2 的表）。** 每一層都是六角柱形，稜線帶 `EDGE_BEVEL` 的小倒角，每一面是平的（不再是圓角盒）：
+
+| id | 形狀 | parts | 錨點 |
+|---|---|---|---|
+| `cell_membrane` | 厚 `MEMBRANE_T` 的薄殼，內表面就是空腔的邊界 | `main`, `cut` | `(-2.2, -1.2, 2.85)` |
+| `cell_wall`（本細胞） | 厚 `WALL_T`，與細胞膜之間留 `GAP`；外表面就是 `hex_vertices()` 定義的六角柱 | `main`, `cut` | `(-2.2, -2.0, 3.06)` |
+| `middle_lamella` | 緊貼本細胞的壁外側、厚 `LAMELLA_T` 的一層（上下與六個側面都有）；並沿六條直立稜各伸出一片，夾在兩片相鄰細胞壁中間，伸出長度 `FLANGE_LEN`、與本體等高 | `main`, `cut` | `(-2.2, -2.0, 3.23)` |
+| `cell_wall`（相鄰細胞） | 中膠層外側、厚 `NEIGHBOR_WALL_T` 的一層（上下與六個側面都有）；六條直立稜上各有兩片夾住伸出的中膠層，伸出長度 `FLANGE_LEN`。伸出的末端是平的切口，看得到「壁｜中膠層｜壁」三層 | `neighbor`, `cut` | 無 |
+| `cytoplasm` | 細胞膜內側空間的實心體 | `main` | `(-2.2, -2.0, 1.6)` |
+| `plasmodesmata` | 16 條貫穿「本細胞的壁、中膠層、相鄰細胞的壁」三層的短管（半徑 0.07），兩端有小環；至少 3 條落在切面上被剖開。合併成一個網格 | `main` | 其中一條被剖開的管子上 |
+
+- 相鄰細胞的壁標 `organelle: cell_wall`、`part: neighbor`，掛在 `cell_wall` 的同一個個體根底下。
+- 以上每一層（含伸出的六片）都切掉掀開區，切面各自獨立成 `cut`。被切掉的部分（細胞膜、兩種壁、中膠層都要）放在蓋子根節點下，蓋回去要密合。
+- 外殼的三角面上限是 60,000。
+
+- [ ] **Step 1:** grep 其他三個模組對 `common` 的引用；更新 `common.py`。
+- [ ] **Step 2:** 把 `shared/palette.json` 改成「配色」一節的內容。
+- [ ] **Step 3:** 改寫 `shell.py`。
+- [ ] **Step 4:** 跑 `node scripts/run-blender.mjs blender/build_cell.py --only shell --preview assets/preview/shell.png`，結束碼 0。
+- [ ] **Step 5:** 跑 `node scripts/check-model.mjs --file assets/parts/shell.glb --ids cell_wall,middle_lamella,cell_membrane,cytoplasm,plasmodesmata --max-triangles 60000`，結束碼 0。
+- [ ] **Step 6:** 跑完整建置 `node scripts/run-blender.mjs blender/build_cell.py --preview assets/preview/full.png` 與 `node scripts/check-model.mjs`，兩者結束碼 0（此時共 16 個 id：舊的 15 個加 `middle_lamella`）。`tests/model.test.mjs` 仍期待舊的 15 個 id，它在 Task 17 才更新，本任務期間它失敗是預期的；`node --test tests/glb.test.mjs tests/three-extras.test.mjs` 要通過。
+- [ ] **Step 7:** 用 Read 看 `assets/preview/shell.png` 與 `assets/preview/full.png`：外形是稜線分明的六角柱；切面上由內而外看得出細胞膜、本細胞的壁、中膠層、相鄰細胞的壁；六條直立稜上各有一片伸出的相鄰細胞壁，末端切口看得出三層；蓋子蓋著時密合；所有胞器都在殼內。不符就修。
+- [ ] **Step 8:** 提交（路徑：`blender/cellkit/common.py blender/cellkit/shell.py shared/palette.json`），訊息 `feat: 外殼改為六角柱，加入中膠層與相鄰細胞壁`。
+
+### Task 15: 染色質獨立、跨液泡細胞質絲（`core.py`）
+
+**Files:**
+- Modify: `blender/cellkit/core.py`
+
+**Interfaces:**
+- Consumes: Task 14 的 `strand_ends`、`STRANDS`，以及既有的 `common.py` 介面
+
+| id | 形狀 | parts | 錨點 |
+|---|---|---|---|
+| `nucleus` | 幾何不變；染色質不再屬於它 | `main`, `cut`, `pore` | 不變 |
+| `chromatin` | 原本的染色質網格改成獨立的構造：自己的個體根（放在染色質的幾何中心）。幾何與既有的檢查（不穿出核膜、不擋在核仁前面）都保留 | `main` | 從切口看得到的一段染色質上 |
+| `transvacuolar_strand` | 3 條穿過液泡的細管，合併成一個網格、一個個體。每條從 `strand_ends(i)` 的 `near` 到 `far`；中段半徑 0.09，兩端最後 0.35 的長度內平順地張開到半徑 0.16；路徑是略帶 S 形的平滑曲線，離直線的橫向偏移不超過 0.25 | `main` | 第 0 條的 `near` 端 |
+
+- `build` 裡的自我檢查（不過就丟 `ValueError`）：每條絲去掉兩端各 0.4 之後的中段，所有頂點都在液泡橢球內；每條絲的所有頂點都滿足 `inside_cavity(p, 0.05)`、距細胞核中心都大於 `NUCLEUS_ZONE`。
+- 這個模組的三角面上限是 56,000。
+
+- [ ] **Step 1:** 修改 `core.py`。
+- [ ] **Step 2:** 跑 `node scripts/run-blender.mjs blender/build_cell.py --only core --preview assets/preview/core.png`，結束碼 0。
+- [ ] **Step 3:** 跑 `node scripts/check-model.mjs --file assets/parts/core.glb --ids vacuole,nucleus,nucleolus,chromatin,transvacuolar_strand --max-triangles 56000`，結束碼 0。
+- [ ] **Step 4:** 用 Read 看 `assets/preview/core.png`：三條細胞質絲穿過半透明的液泡、兩端張開；細胞核的外觀與改版前相同。不符就修。
+- [ ] **Step 5:** 回報完成（不自行提交）。
+
+### Task 16: 皮層微管、肌動蛋白微絲、油體（`endomembrane.py`）
+
+**Files:**
+- Modify: `blender/cellkit/endomembrane.py`
+
+**Interfaces:**
+- Consumes: Task 14 的 `cavity_sdf`（六角柱）、`OIL_BODY_REP`，以及既有的 `common.py` 介面
+
+| id | 形狀 | parts | 錨點 |
+|---|---|---|---|
+| `microtubule` | 取代 `cytoskeleton` 的微管：16 條，半徑 0.022，沿細胞膜內側（距膜 0.15 到 0.35）走，貼合六角柱空腔（用 `cavity_sdf`，不要假設空腔是盒子）。一個個體、一個網格。掀開區內至少 4 條 | `main` | 掀開區內看得到的一條的中點 |
+| `actin_filament` | 取代 `cytoskeleton` 的微絲：12 條，半徑 0.012，從皮層伸向細胞核附近，略彎。一個個體、一個網格 | `main` | 掀開區內看得到的一條的中點 |
+| `oil_body` | 5 顆光滑的球，半徑 0.17 到 0.21。第 0 顆（代表）放在 `OIL_BODY_REP`，是固定位置，不呼叫 `reserve`；其餘 4 顆用 `sample_free(0.22, …)`（其中 1 顆在掀開區）取位置並 `reserve`。每顆一個個體 | `main` | 無 |
+
+- 模型裡不再有 `cytoskeleton` 這個 id。微管與微絲都不得穿過液泡（半軸各加 0.15）與 `NUCLEUS_ZONE`；既有的自我檢查改成分別檢查這兩個構造。
+- 其餘構造（粗糙內質網、核糖體、平滑內質網、高基氏體）的幾何與檢查不變。
+- 這個模組的三角面上限是 104,000。
+
+- [ ] **Step 1:** 修改 `endomembrane.py`。
+- [ ] **Step 2:** 跑 `node scripts/run-blender.mjs blender/build_cell.py --only endomembrane --preview assets/preview/endomembrane.png`，結束碼 0。
+- [ ] **Step 3:** 跑 `node scripts/check-model.mjs --file assets/parts/endomembrane.glb --ids rough_er,ribosome,smooth_er,golgi,microtubule,actin_filament,oil_body --max-triangles 104000`，結束碼 0，且摘要的 id 清單裡沒有 `cytoskeleton`。
+- [ ] **Step 4:** 用 Read 看 `assets/preview/endomembrane.png`：微管沿六角柱的內壁走、轉角處順著稜線；油體是 5 顆紅棕色的小球；其餘構造與改版前相同。不符就修。
+- [ ] **Step 5:** 回報完成（不自行提交）。
+
+### Task 17: 改版後的重新整合
+
+**Files:**
+- Modify: `tests/model.test.mjs`, `shared/palette.json`（只移除兩個過渡用的鍵）
+- Modify: `blender/cellkit/*.py`（只修整合時發現的重疊或穿模；固定位置的構造互相穿插時回報 BLOCKED）
+
+- [ ] **Step 1:** 把 `tests/model.test.mjs` 期待的 id 清單改成 Global Constraints 的 20 個。跑 `node --test tests/model.test.mjs` 確認失敗（目前的 `assets/plant_cell.glb` 還是舊的）。
+- [ ] **Step 2:** 從 `shared/palette.json` 移除 `nucleus.chromatin` 與 `cytoskeleton` 兩個過渡用的鍵。跑 `node scripts/run-blender.mjs blender/build_cell.py --preview assets/preview/full.png`，結束碼 0（代表沒有模組還在用這兩個鍵）。
+- [ ] **Step 3:** 跑 `node --test tests/glb.test.mjs tests/three-extras.test.mjs tests/model.test.mjs` 全數通過；跑 `node scripts/check-model.mjs`，在回報附上三角面數與檔案大小。
+- [ ] **Step 4:** 種子 20261117 到 20261126 各做一次完整建置（輸出到暫存資料夾），十個都要完成。
+- [ ] **Step 5:** 用 Node 腳本解析正式的 glb 做量化驗算並附上數字：粗糙內質網、附著的核糖體、平滑內質網到細胞核中心的最小距離（應大於 1.18）；葉綠體、粒線體、過氧化體、油體每個個體的碰撞球（半徑 0.62、0.48、0.25、0.22）裡別的構造的頂點數（應為 0；`cytoplasm` 不算）；所有胞器（`cell_wall`、`middle_lamella`、`cell_membrane`、`cytoplasm`、`plasmodesmata` 除外）的頂點是否都在六角柱空腔內；高基氏體是否在液泡之外。
+- [ ] **Step 6:** 用 Read 看 `assets/preview/full.png`：六角柱外殼、三層壁與六片相鄰細胞壁、掀開的一角看得到所有代表構造（含油體與穿過液泡的細胞質絲）、蓋子密合。不符就修。
+- [ ] **Step 7:** 提交（路徑：`blender shared/palette.json tests/model.test.mjs`），訊息 `feat: 改版後的完整模型（20 項構造）`。
+
+### Task 18: 介紹文字重寫（大學程度，20 項）
+
+**Files:**
+- Modify: `web/src/organelles.js`, `tests/organelles.test.mjs`
+
+**Interfaces:**
+- Produces（匯出的名稱與 Task 8 相同，內容改版）：
+  - `ORGANELLES: { id, zh, en, tagline, body, fact, pickable }[]`：20 項，順序同 Global Constraints；`zh`、`en` 照規格 §11 的構造清單；`pickable` 為 `false` 的是 Global Constraints 列的那 7 個 id。
+  - `ORGANELLE_IDS`、`QUIZ_IDS`（13 個）、`getOrganelle(id)`、`INTRO: { title: '植物細胞', paragraphs: string[], start: '開始探索' }` 不變。
+  - `web/src/forbidden-words.js` 不變。
+
+- [ ] **Step 1:** 改寫 `tests/organelles.test.mjs`（長度以 `[...s].length` 計）：
+  - `ORGANELLE_IDS` 等於 20 個 id 的固定順序；每項的 `zh`、`en` 等於規格 §11 的對照表（整張表寫進測試）。
+  - 每項 `tagline` 長度 1 到 30、`body` 長度 120 到 260、`fact` 為 `null` 或長度 1 到 90。
+  - `pickable` 為 `false` 的恰好是那 7 個 id；`QUIZ_IDS.length === 13`。
+  - 所有文字（含 `INTRO`）不含禁用詞。
+  - `vacuole` 的 `body` 或 `fact` 含「比例」。
+  - `INTRO.paragraphs` 有 2 到 3 段，合起來含「葉肉細胞」「中膠層」「原生質絲」「液泡」「比例」，總長度不超過 260。
+- [ ] **Step 2:** 跑 `node --test tests/organelles.test.mjs` 確認失敗。
+- [ ] **Step 3:** 改寫 `web/src/organelles.js`。程度是大學普通生物學到植物生理學：每項的 `body` 要講到構造的組成（例如膜的層數、主要成分）、位置、功能，以及它與其他構造的關係；用詞精確。開場要說明：這是葉肉細胞的示意模型；相鄰細胞以中膠層相黏、以原生質絲相通；液泡的比例刻意縮小。
+- [ ] **Step 4:** 跑 `node --test tests/organelles.test.mjs` 通過。
+- [ ] **Step 5:** 回報完成（不自行提交）。
+
+主持人另派一位沒參與撰寫的審查者，逐句核對生物學正確性與台灣的學術用語。
+
 ### Task 7: 網頁檢視器與單檔打包
 
 **Files:**
@@ -274,10 +419,11 @@ test('fixture 摘要', () => {
 
 **畫面規格：**
 - 繪圖：開啟反鋸齒、ACES 色調對應、sRGB 輸出、像素比上限 2；環境光用 three.js 內建的 `RoomEnvironment`（不載入外部檔）；一盞帶柔和陰影的暖色主光、一盞冷色輪廓光、一盞半球補光。
-- 背景：畫布透明，頁面底色用 CSS 放射漸層 `#12303a → #071318`。
-- 鏡頭：位置為方向 `(0.62, 0.48, 0.62)` 正規化後乘以 17，看向模型中心；`OrbitControls` 開啟阻尼，縮放距離限制在 6 到 30，關閉平移。
-- 材質：預設不透明、粗糙度 0.45 到 0.65。`cut` 一律比 `main` 更霧面。半透明的只有三種：`vacuole`（唯一可用 `transmission` 的構造）、`cytoplasm`（不透明度約 0.12、`depthWrite: false`）、`cell_membrane`（不透明度約 0.9）。
+- 背景：畫布透明，頁面底色用 CSS 放射漸層 `#F6F3EC → #DDD6C6`（淺色紙張色調，配合教科書插畫的畫風）。
+- 鏡頭：位置為方向 `(0.62, 0.48, 0.62)` 正規化後乘以 20，看向模型中心；`OrbitControls` 開啟阻尼，縮放距離限制在 7 到 36，關閉平移。
+- 材質：預設不透明、粗糙度 0.6 到 0.8（教科書插畫的霧面質感，不要塑膠般的高光）。`cut` 一律比 `main` 更霧面。半透明的只有三種：`vacuole`（唯一可用 `transmission` 的構造）、`cytoplasm`（不透明度約 0.12、`depthWrite: false`）、`cell_membrane`（不透明度約 0.9）。
 - 不使用後製（不加 EffectComposer）。
+- **模型正在改版**（Task 14 到 17）：`assets/plant_cell.glb` 的 id 會從 15 個變成 20 個，`shared/palette.json` 的鍵也會跟著增減。檢視器不得寫死 id 的數量或清單；材質一律依 palette 的 `organelle/part` 查色，palette 裡查不到的組合用中性灰並以 `console.warn` 提示一次（不可用 `console.error`）。
 
 - [ ] **Step 1:** 寫失敗測試 `tests/model-index.test.mjs`：用 `tests/fixtures/tag_spike.glb` 經 `parseModel` 與 `indexModel`，斷言 `byId.get('mitochondrion').meshes.length === 2`、`byId.get('mitochondrion').rep.userData.rep === 1`、`byId.get('mitochondrion').anchor === byId.get('mitochondrion').rep`、`byId.get('cell_wall').meshes.length === 2`（含蓋子裡那個）、`byId.get('cell_wall').anchor.userData.anchor === 1`、`lid !== null`；另用手建的 `Object3D` 樹斷言 `findOrganelle` 會越過沒有標記的中間層、頂層都沒有時回傳 `null`。跑 `npm test` 確認失敗。
 - [ ] **Step 2:** 實作 `web/src/model.js`，`npm test` 通過。
@@ -290,7 +436,9 @@ test('檢視器載入完整模型', async () => {
   await page.waitFor("document.documentElement.dataset.cellReady === '1'");
   const s = await page.evaluate('window.__cell.stats()');
   assert.equal(s.unresolved, 0);
-  assert.equal(s.ids.length, 15);
+  const built = summarizeGlb(...Object.values(readGlb('assets/plant_cell.glb')));
+  assert.deepEqual([...s.ids].sort(), [...built.ids].sort());
+  assert.ok(s.ids.length >= 15);
   assert.deepEqual(page.consoleErrors, []);
   assert.equal(page.requests.filter(u => !u.startsWith('file://') && !u.startsWith('data:') && !u.startsWith('blob:')).length, 0);
   await page.screenshot('assets/preview/web-default.png');
@@ -311,13 +459,13 @@ test('成品是單一檔案', () => {
 
 ### 🛑 檢查點一（由主持人執行，不派給實作者）
 
-主持人自己看 `assets/preview/web-default.png` 與 `web-rotated.png`，不滿意就先派修正。滿意後把 `dist/plant-cell.html` 交給使用者試轉，確認形狀與質感的方向。**使用者確認前不開始 Task 9 之後的任務。**
+主持人自己看 `assets/preview/web-default.png` 與 `web-rotated.png`，不滿意就先派修正。滿意後把 `dist/plant-cell.html` 交給使用者試轉，確認形狀與質感的方向。檢查點一在改版任務（Task 14 到 17）與 Task 7 都完成後進行。**使用者確認前不開始 Task 9 之後的任務。**
 
 ---
 
 ## 第二階段：到檢查點二（第一個可玩版本）
 
-### Task 8: 介紹文字（可提早進行）
+### Task 8: 介紹文字（已完成；內容由 Task 18 重寫）
 
 **Files:**
 - Create: `web/src/organelles.js`, `web/src/forbidden-words.js`
@@ -354,7 +502,7 @@ test('成品是單一檔案', () => {
 **Interfaces:**
 - Consumes: Task 7 的 `indexModel` 結果、Task 8 的 `ORGANELLES` 與 `getOrganelle`
 - Produces:
-  - `config.js`：`GHOST_IDS = ['cell_wall', 'cell_membrane', 'cytoplasm']`（會變成殘影的外殼）；`SCALE_IDS = [...GHOST_IDS, 'plasmodesmata', 'cytoskeleton']`（拆解時跟著外殼放大的構造，Task 11 使用）。
+  - `config.js`：`GHOST_IDS = ['cell_wall', 'middle_lamella', 'cell_membrane', 'cytoplasm']`（會變成殘影的外殼）；`SCALE_IDS = [...GHOST_IDS, 'plasmodesmata', 'microtubule', 'actin_filament']`（拆解時跟著外殼放大的構造，Task 11 使用）。
   - `state.js`：`initialState = { phase: 'explore', selected: null, hovered: null, exploded: false, labels: false, quiz: null }`（本任務先以 `'explore'` 起始，Task 10 改為 `'intro'`）。`selected` 與 `hovered` 的形狀是 `{ id, inst }`，`inst` 為 `null` 表示從清單選的。`reduce(state, action) → state`，動作：`hover {id, inst}`、`unhover`、`select {id, inst = null}`、`deselect`。`createStore(initial = initialState) → { getState(), dispatch(action), subscribe(fn) → unsubscribe }`。
   - `picking.js`：`isClick(down: {x, y}, up: {x, y}) → boolean`（位移不超過 5 像素才算點選）；`createPicker({ dom, camera, index, isPickable, onHover, onPick })`，`onHover` 與 `onPick` 收到 `{ id, inst } | null`。射線會穿過兩種網格：自己或任一層祖先 `visible === false` 的，以及 `isPickable(id)` 回傳 `false` 的。用 pointer 事件，觸控的輕點等同點選。
   - `main.js` 提供的 `isPickable(id)`：`getOrganelle(id).pickable` 為 `false` 時回 `false`；外殼目前是殘影且 `id` 在 `GHOST_IDS` 內時回 `false`；其餘回 `true`。
@@ -370,7 +518,7 @@ test('成品是單一檔案', () => {
 - 從清單點：同 id 全部發亮，鏡頭靠近代表個體的錨點。
 - 點空白處：取消選取，鏡頭回到預設位置。
 - 發亮用材質的自發光漸變，變暗用降低彩度與亮度，不用後製。
-- 介面外觀：面板與清單是半透明深色底加背景模糊；內文字級不小於 16 像素；桌機上面板寬 340 像素、靠右；清單在底部，每個按鈕左側有該構造的色點（顏色取 palette 的 `main`）。
+- 介面外觀：淺色主題。面板與清單是半透明的白色底加背景模糊、深色文字；內文字級不小於 16 像素；桌機上面板寬 340 像素、靠右；清單在底部，每個按鈕左側有該構造的色點（顏色取 palette 的 `main`）。
 
 - [ ] **Step 1:** 寫失敗測試 `tests/state.test.mjs`：`select` 後 `selected` 等於給定值；連續兩次 `select` 以後者為準；`deselect` 清空；`hover`／`unhover` 不影響 `selected`；`reduce` 不改動傳入的物件；`subscribe` 的函式在 `dispatch` 後被呼叫一次、`unsubscribe` 後不再被呼叫。
 - [ ] **Step 2:** 寫失敗測試 `tests/picking.test.mjs`：`isClick({x:10,y:10},{x:13,y:14}) === true`（位移 5）；`isClick({x:10,y:10},{x:16,y:10}) === false`（位移 6）。
@@ -385,7 +533,7 @@ test('成品是單一檔案', () => {
   - 從 `(640,400)` 拖曳到 `(800,400)` 後，`selected` 不變。（Review Focus 1）
   - 點畫面角落的空白處：`selected === null` 且 `#panel` 隱藏。
   - 用 `tap` 點 `screenPointOf('nucleus')`：`selected.id === 'nucleus'`。
-  - 逐一點清單上的 15 個按鈕：`#panel-title` 等於該項的 `zh`、`#panel-body` 等於該項的 `body`。
+  - 逐一點清單上的 20 個按鈕：`#panel-title` 等於該項的 `zh`、`#panel-body` 等於該項的 `body`。
   - `#list-title` 文字為「細胞構造」。
   - 一致性：`__cell.stats().ids` 排序後等於 `ORGANELLE_IDS` 排序後的結果（規格 §7 的一致性檢查）。
 - [ ] **Step 6:** 跑 `npm test && npm run e2e` 通過。用 Read 看兩張截圖：`web-selected.png` 細胞核明顯發亮、其他變暗、面板文字清楚不擁擠；`web-selected-multi.png` 被點的那個粒線體最亮、其他粒線體微亮。
@@ -449,7 +597,7 @@ test('成品是單一檔案', () => {
 - [ ] **Step 2:** 實作 `createExploder`、`labels.js`、`toolbar.js` 並接進 `main.js`。
 - [ ] **Step 3:** 寫 `tests/e2e/play.e2e.mjs`（開頭先點 `#intro-start` 並等 `lidOpen()`）：
   - 記下 `nucleus, golgi, chloroplast, mitochondrion, peroxisome, vacuole` 六者的 `repScreenPoint`。點 `#btn-explode`，3 秒內 `explodeProgress() === 1`；六者任兩個在畫面上的距離都比拆解前大；`screenPointOf('cell_wall') === null`（外殼是殘影、不可點）；截圖 `assets/preview/web-exploded.png`。再點一次，`explodeProgress()` 回到 0。
-  - 點 `#btn-labels`，`#labels [data-id]` 共 15 個，其中可見的至少 8 個；截圖 `assets/preview/web-labels.png`。再點一次全部隱藏。
+  - 點 `#btn-labels`，`#labels [data-id]` 共 20 個，其中可見的至少 10 個；截圖 `assets/preview/web-labels.png`。再點一次全部隱藏。
 - [ ] **Step 4:** 跑 `npm test && npm run e2e` 通過。用 Read 看兩張截圖：拆解後各構造彼此分開、標籤不互相重疊到無法閱讀。
 - [ ] **Step 5:** 提交（路徑：`web tests`），訊息 `feat: 拆解與名稱標籤`。
 
