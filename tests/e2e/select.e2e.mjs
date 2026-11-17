@@ -252,7 +252,7 @@ test('回到預設位置後的鏡頭與 view.frame(box) 的結果一致', async 
     await page.click(...Object.values(await page.evaluate("(() => { const r = document.getElementById('panel-close').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()")));
     await settle(page);
     const before = await camState(page);
-    await page.evaluate('window.__cell.view.frame(window.__cell.index.box)');
+    await page.evaluate('window.__cell.frameCurrent()');
     assert.ok(near(before, await camState(page)), '回到預設後的鏡頭設定應與 frame() 相同');
   } finally {
     await page.close();
@@ -286,7 +286,7 @@ test('動畫中途縮放視窗：靠近動畫停在被選構造，回到預設�
     await setInnerWidth(page, 420);
     await settle(page);
     const after = await camState(page);
-    await page.evaluate('window.__cell.view.frame(window.__cell.index.box)');
+    await page.evaluate('window.__cell.frameCurrent()');
     assert.ok(near(after, await camState(page)), '動畫中途縮放後，結束時的鏡頭、maxDistance、far 應與 frame() 相同');
   } finally {
     await page.close();

@@ -129,8 +129,8 @@ export function createLabels({
 
   function update() {
     if (!visible) return;
-    const W = window.innerWidth;
-    const H = window.innerHeight;
+    const W = container.clientWidth || window.innerWidth; // 標籤的範圍就是畫布（容器的大小）
+    const H = container.clientHeight || window.innerHeight;
     const mc = project(index.center, W, H); // 模型中心的投影：標籤往外呈放射狀
     const wanted = order.map((i) => {
       const it = items[i];

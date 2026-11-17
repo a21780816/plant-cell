@@ -4,14 +4,18 @@ html, body {
   overflow: hidden;
   font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
 }
+/* 版面變數由 main.js 依視窗大小寫入：畫布大小、底部保留帶（wide／short：清單高度加留白） */
+:root { --stage-w: 100vw; --stage-h: 100vh; --band: 0px; }
 body {
-  background: radial-gradient(ellipse at 50% 45%, #F6F3EC 0%, #DDD6C6 100%) #E8E3D6;
+  /* 背景畫在整個 body 上（畫布透明），畫布與下方區是同一張漸層，看不出接縫 */
+  background: radial-gradient(ellipse at 50% 42%, #F6F3EC 0%, #DDD6C6 100%) #E8E3D6;
 }
 #stage {
   position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
+  left: 0;
+  top: 0;
+  width: var(--stage-w);
+  height: var(--stage-h);
   display: block;
   touch-action: none;
   outline: none;
@@ -51,7 +55,7 @@ body {
   z-index: 3;
   box-sizing: border-box;
   width: 340px;
-  max-height: calc(100vh - 32px - 168px); /* 底部留給構造清單 */
+  max-height: calc(var(--stage-h) - 32px - var(--band)); /* 底部留給構造清單 */
   overflow-y: auto;
   padding: 24px 24px 22px;
   border: 1px solid var(--line);
@@ -134,14 +138,15 @@ body {
 
 #list-wrap {
   position: fixed;
-  left: 50%;
-  bottom: 16px;
+  left: 0;
+  right: 0;
+  bottom: 12px;
   z-index: 2;
-  transform: translateX(-50%);
+  margin: 0 auto;
   box-sizing: border-box;
   width: max-content;
-  max-width: min(90vw, 980px);
-  padding: 12px 16px 14px;
+  max-width: min(1240px, calc(100vw - 24px));
+  padding: 8px 12px 10px;
   border: 1px solid var(--line);
   border-radius: 16px;
   background: var(--glass);
@@ -151,25 +156,27 @@ body {
   color: var(--ink);
 }
 #list-title {
-  margin: 0 0 8px 4px;
-  font-size: 13px;
+  margin: 0 0 5px;
+  font-size: 12px;
   line-height: 1.5;
   font-weight: 650;
   letter-spacing: 0.18em;
   color: var(--ink-faint);
+  text-align: center;
 }
-#list { display: flex; flex-wrap: wrap; gap: 6px; }
+#list { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
 #list button {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 12px 6px 10px;
+  gap: 6px;
+  flex: none;
+  padding: 4px 10px 4px 8px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.7);
   color: var(--ink);
   font: inherit;
-  font-size: 14px;
+  font-size: 13.5px;
   line-height: 1.4;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
@@ -190,7 +197,7 @@ body {
   font-weight: 650;
 }
 #list.names-hidden button .label { display: none; }
-#list.names-hidden button { padding: 6px 8px; }
+#list.names-hidden button { padding: 4px 8px; }
 
 /* ---- 工具列（左上角；與清單、面板同一套玻璃質感）---- */
 #toolbar {
@@ -235,16 +242,17 @@ body {
 #toolbar button:disabled:hover { background: rgba(255, 255, 255, 0.7); border-color: var(--line); }
 #toolbar button:focus-visible { outline: 3px solid rgba(78, 115, 82, 0.45); outline-offset: 2px; }
 
-/* ---- 測驗卡片：畫面上方置中，與介紹面板同一套玻璃質感 ---- */
+/* ---- 測驗卡片：測驗時取代底部的清單（同一個位置），與介紹面板同一套玻璃質感 ---- */
 #quiz {
   position: fixed;
-  top: 16px;
-  left: 50%;
+  left: 0;
+  right: 0;
+  bottom: 12px;
   z-index: 3;
-  transform: translateX(-50%);
+  margin: 0 auto;
   box-sizing: border-box;
-  width: min(440px, calc(100vw - 32px));
-  padding: 16px 26px 12px;
+  width: min(560px, calc(100vw - 24px));
+  padding: 10px 24px 10px;
   border: 1px solid var(--line);
   border-radius: 16px;
   background: var(--glass);
@@ -257,8 +265,8 @@ body {
 }
 #quiz[hidden] { display: none; }
 @keyframes quiz-in {
-  from { opacity: 0; transform: translate(-50%, -8px); }
-  to { opacity: 1; transform: translateX(-50%); }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
 }
 #quiz-progress {
   font-size: 13px;
@@ -276,16 +284,16 @@ body {
 }
 #quiz-result {
   min-height: 1.6em; /* 預留一行的高度，揭曉時卡片不會跳動 */
-  margin-top: 6px;
+  margin-top: 2px;
   font-size: 15px;
   line-height: 1.6;
 }
 #quiz-result[data-state="right"] { color: #4A7050; }
 #quiz-result[data-state="wrong"] { color: #96503F; }
 #quiz-summary {
-  margin: 2px 0 4px;
-  font-size: 26px;
-  line-height: 1.5;
+  margin: 0 0 2px;
+  font-size: 22px;
+  line-height: 1.4;
   font-weight: 650;
   letter-spacing: 0.06em;
 }
@@ -318,9 +326,9 @@ body {
 }
 #quiz[data-mode="question"] #quiz-exit:hover { background: rgba(80, 66, 40, 0.08); color: var(--ink); }
 /* 總結時：兩顆都是明顯的按鈕，「再玩一次」是主要動作 */
-#quiz[data-mode="summary"] { padding: 18px 26px 22px; }
-#quiz[data-mode="summary"] #quiz-actions { margin-top: 12px; }
-#quiz[data-mode="summary"] #quiz-actions button { min-width: 112px; padding: 9px 22px; font-size: 16px; }
+#quiz[data-mode="summary"] { padding: 10px 26px 12px; }
+#quiz[data-mode="summary"] #quiz-actions { margin-top: 6px; }
+#quiz[data-mode="summary"] #quiz-actions button { min-width: 112px; padding: 6px 22px; font-size: 15px; }
 #quiz-actions #quiz-retry {
   border-color: transparent;
   background: #4E7352;
@@ -334,7 +342,10 @@ body {
 /* ---- 名稱標籤：貼在構造上的小藥丸；容器不攔截滑鼠，只有標籤攔截 ---- */
 #labels {
   position: fixed;
-  inset: 0;
+  left: 0;
+  top: 0;
+  width: var(--stage-w); /* 標籤只出現在畫布範圍內 */
+  height: var(--stage-h);
   z-index: 1;
   overflow: hidden;
   pointer-events: none;
@@ -480,3 +491,108 @@ body:not([data-phase="explore"]) #labels { display: none; }
   text-align: center;
 }
 #fallback[hidden] { display: none; }
+
+/* ---- 載入提示 ---- */
+#loading {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 50%;
+  z-index: 4;
+  transform: translateY(-50%);
+  text-align: center;
+  font-size: 16px;
+  letter-spacing: 0.3em;
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+#loading[hidden] { display: none; }
+
+/* ---- 版面模式（data-layout 由 main.js 依 window.innerWidth／innerHeight 寫入；預設樣式就是 wide）---- */
+
+/* short：寬度夠、高度小於 560。清單改成單列長條，工具列與面板的留白縮小 */
+body[data-layout="short"] #toolbar { top: 10px; left: 10px; padding: 5px; gap: 4px; }
+body[data-layout="short"] #toolbar button { padding: 3px 11px; font-size: 13px; }
+body[data-layout="short"] #panel {
+  top: 10px;
+  right: 10px;
+  width: 300px;
+  max-height: calc(var(--stage-h) - 20px - var(--band));
+  padding: 16px 18px 14px;
+  font-size: 15px;
+  line-height: 1.6;
+}
+body[data-layout="short"] #panel-title { font-size: 21px; }
+body[data-layout="short"] #list-wrap {
+  left: 12px;
+  right: 12px;
+  bottom: 8px;
+  width: auto;
+  max-width: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+}
+body[data-layout="short"] #list-title { margin: 0; flex: none; white-space: nowrap; }
+body[data-layout="short"] #list {
+  flex: 1;
+  min-width: 0;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+body[data-layout="short"] #list::-webkit-scrollbar { display: none; }
+/* 測驗卡片：同樣縮成一條，放在清單的位置 */
+body[data-layout="short"] #quiz {
+  bottom: 8px;
+  width: min(820px, calc(100vw - 24px));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 6px 16px;
+}
+body[data-layout="short"] #quiz[hidden] { display: none; }
+body[data-layout="short"] #quiz-progress { white-space: nowrap; }
+body[data-layout="short"] #quiz-question { margin: 0; font-size: 18px; line-height: 1.4; white-space: nowrap; }
+body[data-layout="short"] #quiz-result { min-height: 0; margin: 0; flex: 1; text-align: left; font-size: 14px; line-height: 1.4; }
+body[data-layout="short"] #quiz[data-mode="question"] #quiz-exit { position: static; padding: 3px 10px; }
+body[data-layout="short"] #quiz[data-mode="summary"] { padding: 6px 16px; }
+body[data-layout="short"] #quiz-summary { margin: 0; font-size: 18px; }
+body[data-layout="short"] #quiz[data-mode="summary"] #quiz-actions { margin-top: 0; }
+body[data-layout="short"] #quiz[data-mode="summary"] #quiz-actions button { padding: 3px 16px; font-size: 14px; min-width: 0; }
+/* 開場卡片：縮小字級與留白，矮視窗也完整可見 */
+body[data-layout="short"] #intro { padding: 8px; }
+body[data-layout="short"] #intro-card { width: min(640px, 94vw); max-height: calc(100vh - 16px); padding: 16px 28px 16px; }
+body[data-layout="short"] #intro-title { margin: 0 0 8px; font-size: 22px; }
+body[data-layout="short"] #intro-card .intro-text { margin: 0 0 5px; font-size: 14px; line-height: 1.6; }
+body[data-layout="short"] #intro-start { margin-top: 12px; padding: 8px 28px; font-size: 16px; min-width: 140px; }
+
+/* narrow：畫布只佔上方 52%；下方區輪流放清單、介紹面板、測驗卡片（背景是同一張漸層，沒有接縫） */
+body[data-layout="narrow"] #toolbar { top: 8px; left: 8px; padding: 5px; gap: 4px; }
+body[data-layout="narrow"] #toolbar button { padding: 3px 11px; font-size: 13px; }
+body[data-layout="narrow"] #list-wrap,
+body[data-layout="narrow"] #panel,
+body[data-layout="narrow"] #quiz {
+  top: calc(var(--stage-h) + 4px);
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+}
+body[data-layout="narrow"] #list-wrap { overflow-y: auto; scrollbar-width: thin; padding: 10px 12px 12px; }
+body[data-layout="narrow"] #list-title { font-size: 13px; margin-bottom: 8px; }
+body[data-layout="narrow"] #list { gap: 6px; }
+body[data-layout="narrow"] #list button { padding: 6px 11px 6px 9px; font-size: 14px; }
+body[data-layout="narrow"] #list.names-hidden button { padding: 6px 8px; }
+body[data-layout="narrow"] #panel { padding: 18px 18px 16px; font-size: 15px; line-height: 1.65; }
+body[data-layout="narrow"] #panel-title { font-size: 22px; }
+body[data-layout="narrow"] #panel:not([hidden]) ~ #list-wrap { display: none; } /* 有選取時面板取代清單 */
+body[data-layout="narrow"] #quiz { bottom: auto; padding: 14px 18px 12px; }
+body[data-layout="narrow"] #quiz[data-mode="summary"] { padding: 18px 20px 20px; }
+body[data-layout="narrow"] #quiz[data-mode="summary"] #quiz-actions { margin-top: 14px; }
