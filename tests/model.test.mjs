@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { readGlb, summarizeGlb } from '../scripts/glb.mjs';
 
 const IDS = [
-  'cell_wall', 'cell_membrane', 'cytoplasm', 'nucleus', 'nucleolus', 'rough_er', 'smooth_er',
-  'ribosome', 'golgi', 'mitochondrion', 'chloroplast', 'vacuole', 'peroxisome', 'plasmodesmata',
-  'cytoskeleton',
+  'cell_wall', 'middle_lamella', 'cell_membrane', 'cytoplasm', 'nucleus', 'nucleolus', 'chromatin',
+  'rough_er', 'smooth_er', 'ribosome', 'golgi', 'mitochondrion', 'chloroplast', 'vacuole',
+  'transvacuolar_strand', 'peroxisome', 'oil_body', 'plasmodesmata', 'microtubule', 'actin_filament',
 ];
 const MAX_TRIANGLES = 500000;
 const MAX_BYTES = 15 * 1024 * 1024;
@@ -14,7 +14,7 @@ const MAX_BYTES = 15 * 1024 * 1024;
 const { json, byteLength } = readGlb('assets/plant_cell.glb');
 const s = summarizeGlb(json, byteLength, { maxTriangles: MAX_TRIANGLES, maxBytes: MAX_BYTES });
 
-test('完整模型含 15 個 id', () => {
+test('完整模型含 20 個 id', () => {
   assert.deepEqual([...s.ids].sort(), [...IDS].sort());
 });
 

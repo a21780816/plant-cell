@@ -3,7 +3,7 @@
   "middle_lamella":       { "main": "#8E7F63", "cut": "#A39474" },
   "cell_membrane":        { "main": "#E2A77A", "cut": "#EFC4A2" },
   "cytoplasm":            { "main": "#EDE6D3" },
-  "nucleus":              { "main": "#A396B8", "cut": "#CBC2D8", "pore": "#7E7096", "chromatin": "#6F6289" },
+  "nucleus":              { "main": "#A396B8", "cut": "#CBC2D8", "pore": "#7E7096" },
   "nucleolus":            { "main": "#B56B95" },
   "chromatin":            { "main": "#6F6289" },
   "rough_er":             { "main": "#5E9FA0" },
@@ -18,6 +18,5 @@
   "oil_body":             { "main": "#A65A3C" },
   "plasmodesmata":        { "main": "#7F9A84" },
   "microtubule":          { "main": "#5D7F6B" },
-  "actin_filament":       { "main": "#8B8FA0" },
-  "cytoskeleton":         { "main": "#5D7F6B", "filament": "#8B8FA0" }
+  "actin_filament":       { "main": "#8B8FA0" }
 }
