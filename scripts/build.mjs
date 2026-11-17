@@ -62,8 +62,16 @@ async function watchAndServe(argv) {
       setup(b) {
         b.onEnd((r) => {
           if (r.errors.length) { console.error('建置失敗', r.errors[0].text); return; }
-          const o = assemble(r.outputFiles[0].text);
-          console.log(`已重建 ${o.outfile}（${(o.bytes / 1048576).toFixed(2)} MB）`);
+          if (!glbComplete()) {
+            console.warn('模型檔尚未寫完（可能正在重建），跳過這次重建；寫完後會自動再建');
+            return;
+          }
+          try {
+            const o = assemble(r.outputFiles[0].text);
+            console.log(`已重建 ${o.outfile}（${(o.bytes / 1048576).toFixed(2)} MB）`);
+          } catch (e) {
+            console.error('組裝 HTML 失敗', e);
+          }
         });
       },
     };

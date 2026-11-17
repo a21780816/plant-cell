@@ -7,7 +7,9 @@ import { readGlb, summarizeGlb } from '../../scripts/glb.mjs';
 test('檢視器載入完整模型', async () => {
   const page = await openPage('dist/plant-cell.html', { offline: true });
   try {
-    await page.waitFor("document.documentElement.dataset.cellReady === '1'");
+    await page.waitFor("document.documentElement.dataset.cellReady === '1' || !!document.documentElement.dataset.cellError");
+    const failure = await page.evaluate('document.documentElement.dataset.cellError || ""');
+    assert.equal(failure, '', `檢視器啟動失敗：${failure}`);
     const s = await page.evaluate('window.__cell.stats()');
     console.log('stats', JSON.stringify({ ...s, ids: s.ids.length }));
     assert.equal(s.unresolved, 0);
@@ -15,6 +17,8 @@ test('檢視器載入完整模型', async () => {
     assert.deepEqual([...s.ids].sort(), [...built.ids].sort());
     assert.ok(s.ids.length >= 15);
     assert.deepEqual(page.consoleErrors, []);
+    console.log('warnings', JSON.stringify(page.consoleWarnings));
+    assert.deepEqual(page.consoleWarnings.filter((w) => !w.includes('[materials]')), [], 'three.js 不應有棄用或其他警告');
     assert.equal(page.requests.filter((u) => !u.startsWith('file://') && !u.startsWith('data:') && !u.startsWith('blob:')).length, 0);
     await page.screenshot('assets/preview/web-default.png');
     await page.drag(640, 400, 900, 300);

@@ -15,10 +15,7 @@ async function main() {
   view.scene.add(model);
   if (index.lid) index.lid.visible = false; // 本階段畫面是掀開狀態
 
-  const dir = view.camera.position.clone().normalize();
-  view.controls.target.copy(index.center);
-  view.camera.position.copy(index.center).addScaledVector(dir, 20);
-  view.controls.update();
+  view.frame(index.center, index.radius);
 
   const meshes = [];
   model.traverse((o) => { if (o.isMesh) meshes.push(o); });

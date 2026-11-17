@@ -62,25 +62,44 @@ export async function openPage(target, { width = 1280, height = 800, offline = f
     const listeners = [];
     const consoleErrors = [];
     const requests = [];
+    const consoleWarnings = [];
+    let closed = null; // 連線中斷的原因；設了之後所有呼叫立刻丟錯
+    const failAll = (why) => {
+      if (closed) return;
+      closed = new Error(`DevTools 連線中斷：${why}`);
+      for (const p of pending.values()) { clearTimeout(p.timer); p.rej(closed); }
+      pending.clear();
+    };
+    ws.onclose = () => failAll('WebSocket 已關閉（Chrome 可能已結束）');
+    ws.onerror = () => failAll('WebSocket 錯誤');
+    chrome.once('exit', () => failAll('Chrome 行程已結束'));
     ws.onmessage = (ev) => {
       const msg = JSON.parse(ev.data);
       if (msg.id !== undefined) {
         const p = pending.get(msg.id);
         if (!p) return;
         pending.delete(msg.id);
+        clearTimeout(p.timer);
         msg.error ? p.rej(new Error(`${p.method}: ${msg.error.message}`)) : p.res(msg.result);
       } else {
         for (const l of listeners) l(msg);
       }
     };
-    const send = (method, params = {}) => new Promise((res, rej) => {
+    const send = (method, params = {}, timeoutMs = 30000) => new Promise((res, rej) => {
+      if (closed) { rej(closed); return; }
       const id = nextId++;
-      pending.set(id, { res, rej, method });
-      ws.send(JSON.stringify({ id, method, params }));
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        rej(new Error(`${method} 逾時（${timeoutMs} ms）`));
+      }, timeoutMs);
+      pending.set(id, { res, rej, method, timer });
+      try { ws.send(JSON.stringify({ id, method, params })); } catch (e) { clearTimeout(timer); pending.delete(id); rej(e); }
     });
 
     listeners.push((m) => {
-      if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') {
+      if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'warning') {
+        consoleWarnings.push(m.params.args.map((a) => a.value ?? a.description ?? '').join(' '));
+      } else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') {
         consoleErrors.push(m.params.args.map((a) => a.value ?? a.description ?? '').join(' '));
       } else if (m.method === 'Runtime.exceptionThrown') {
         const d = m.params.exceptionDetails;
@@ -113,16 +132,22 @@ export async function openPage(target, { width = 1280, height = 800, offline = f
 
     return {
       consoleErrors,
+      consoleWarnings,
       requests,
       evaluate,
       async waitFor(expr, timeoutMs = 15000) {
         const t0 = Date.now();
         let lastErr = null;
         while (Date.now() - t0 < timeoutMs) {
-          try { if (await evaluate(expr)) return; } catch (e) { lastErr = e; }
+          try {
+            const left = Math.max(1, timeoutMs - (Date.now() - t0));
+            let timer;
+            const guard = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('evaluate 無回應')), left); });
+            try { if (await Promise.race([evaluate(expr), guard])) return; } finally { clearTimeout(timer); }
+          } catch (e) { lastErr = e; if (closed) break; }
           await sleep(100);
         }
-        throw new Error(`waitFor 逾時（${timeoutMs} ms）：${expr}${lastErr ? `\n最後一次錯誤：${lastErr.message}` : ''}`);
+        throw new Error(`waitFor ${closed ? '失敗（連線已中斷）' : `逾時（${timeoutMs} ms）`}：${expr}${lastErr ? `\n最後一次錯誤：${lastErr.message}` : ''}`);
       },
       async click(x, y) {
         await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });

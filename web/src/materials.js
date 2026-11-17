@@ -4,6 +4,16 @@ import { findOrganelle } from './model.js';
 const NEUTRAL = '#B8B4AC';
 const warned = new Set();
 
+// 半透明構造的唯一定義：繪製順序（細胞膜 → 細胞質 → 液泡，後者疊在前者上）與各自的材質參數。
+// 不使用 0，避免與日後預設為 0 的透明物件混排。三者都不寫入深度，
+// 這樣液泡與細胞質後面、裡面的不透明構造與較後畫的半透明層都不會被擋掉。
+// 只有 main 等非 cut 的 part 適用；cut 一律不透明。
+const TRANSLUCENT = {
+  cell_membrane: { order: 1, opacity: 0.9, roughness: 0.6 },
+  cytoplasm: { order: 2, opacity: 0.12, roughness: 0.8 },
+  vacuole: { order: 3, opacity: 0.5, roughness: 0.45, specularIntensity: 0.5 },
+};
+
 function warnOnce(key, msg) {
   if (warned.has(key)) return;
   warned.add(key);
@@ -36,23 +46,12 @@ function makeMaterial(id, part, color) {
       emissive: c.clone(), emissiveIntensity: 0.12,
     });
   }
-  switch (id) {
-    case 'vacuole':
-      // 半透明、不寫入深度：液泡裡的構造（細胞質絲等）在不透明階段已先畫好，透得過來。
-      return new MeshPhysicalMaterial({
-        ...base, roughness: 0.45, specularIntensity: 0.5, transparent: true, opacity: 0.5, depthWrite: false,
-      });
-    case 'cytoplasm':
-      return new MeshPhysicalMaterial({
-        ...base, transparent: true, opacity: 0.12, depthWrite: false, roughness: 0.8,
-      });
-    case 'cell_membrane':
-      return new MeshPhysicalMaterial({
-        ...base, transparent: true, opacity: 0.9, roughness: 0.6,
-      });
-    default:
-      return new MeshPhysicalMaterial(base);
+  const t = TRANSLUCENT[id];
+  if (t) {
+    const { order, ...params } = t;
+    return new MeshPhysicalMaterial({ ...base, ...params, transparent: true, depthWrite: false });
   }
+  return new MeshPhysicalMaterial(base);
 }
 
 export function applyMaterials(index, palette) {
@@ -71,12 +70,8 @@ export function applyMaterials(index, palette) {
         mat = shared.get(key);
       }
       mesh.material = mat;
-      const translucent = own === 'vacuole' || own === 'cytoplasm' || own === 'cell_membrane';
-      mesh.castShadow = !translucent;
-      // 半透明層的繪製順序：細胞膜 → 細胞質 → 液泡（液泡不寫深度，要最後疊上去）
-      if (own === 'cell_membrane') mesh.renderOrder = 0;
-      else if (own === 'cytoplasm') mesh.renderOrder = 1;
-      else if (own === 'vacuole') mesh.renderOrder = 2;
+      mesh.castShadow = !mat.transparent;
+      mesh.renderOrder = mat.transparent ? TRANSLUCENT[own].order : 0;
       mesh.receiveShadow = true;
     }
   }
