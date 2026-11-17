@@ -32,7 +32,10 @@ export async function openPage(target, { width = 1280, height = 800, offline = f
       await Promise.race([exitP, sleep(3000)]);
       if (!exited) { chrome.kill('SIGKILL'); await Promise.race([exitP, sleep(2000)]); }
     }
-    rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    // Chrome 結束後偶爾還在寫設定檔，ENOTEMPTY 時多試幾次；仍失敗就放棄（資料夾在 .chrome-profile，不影響結果）
+    for (let i = 0; i < 20; i++) {
+      try { rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); break; } catch (e) { await sleep(250); }
+    }
   };
 
   try {

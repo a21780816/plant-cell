@@ -72,7 +72,9 @@ export function createScene(canvas) {
 
   const dirDefault = new Vector3(0.62, 0.48, 0.62).normalize();
   let boxFramed = null;
+  let extentFramed = null; // 鏡頭距離上限、遠平面、陰影範圍要涵蓋的外框（可大於 boxFramed，例如拆解時的殘影外殼）
   let userMoved = false;
+  let fitMargin = 1.08; // 取景留白（fitDistance 的 margin）
   controls.addEventListener('start', () => { userMoved = true; }); // 拖曳或滾輪縮放
 
   function defaultDistance() {
@@ -83,7 +85,7 @@ export function createScene(canvas) {
     }
     const c = b.getCenter(new Vector3());
     const d = fitDistance({
-      corners, target: c.toArray(), dir: dirDefault.toArray(), fovDeg: camera.fov, aspect: camera.aspect,
+      corners, target: c.toArray(), dir: dirDefault.toArray(), fovDeg: camera.fov, aspect: camera.aspect, margin: fitMargin,
     });
     return Math.max(d, controls.minDistance);
   }
@@ -94,13 +96,22 @@ export function createScene(canvas) {
     return { target, position: target.clone().addScaledVector(dirDefault, defaultDistance()) };
   }
 
+  // 讓 extentFramed 完整入鏡所需的距離（使用者拉到最遠時要能看到整個模型）
+  function extentDistance() {
+    const saved = boxFramed;
+    boxFramed = extentFramed;
+    const d = defaultDistance();
+    boxFramed = saved;
+    return d;
+  }
+
   function applyDefaultCamera() {
     const c = boxFramed.getCenter(new Vector3());
     const dist = defaultDistance();
     controls.target.copy(c);
     camera.position.copy(c).addScaledVector(dirDefault, dist);
-    controls.maxDistance = Math.max(36, dist * 1.8);
-    camera.far = Math.max(200, dist * 4 + boxFramed.getBoundingSphere(new Sphere()).radius * 2);
+    controls.maxDistance = Math.max(36, dist * 1.8, extentDistance() * 1.8);
+    camera.far = Math.max(200, dist * 4 + extentFramed.getBoundingSphere(new Sphere()).radius * 2, extentDistance() * 4);
     camera.updateProjectionMatrix();
     controls.update();
     return dist;
@@ -128,24 +139,28 @@ export function createScene(canvas) {
   }
 
   // 依模型外框推導預設鏡頭與主光陰影範圍；回傳鏡頭距離。呼叫即回到預設位置。
-  function frame(box) {
+  function frame(box, extent = box, margin = 1.08) {
     boxFramed = box.clone();
+    fitMargin = margin;
+    extentFramed = extent.clone();
     userMoved = false;
     const dist = applyDefaultCamera();
-    fitLight(box, false);
+    fitLight(extent, false);
     return dist;
   }
 
   // 只換「預設位置」依據的外框（鏡頭不動）：defaultPose() 與視窗縮放重新取景之後都以它為準。
   // 拆解與組合切換時用：鏡頭由鏡頭動畫慢慢移過去，所以 maxDistance、far 與陰影範圍先只放大不縮小，
   // 動畫結束後由 frame() 套用精確值。
-  function setFrameBox(box) {
+  function setFrameBox(box, extent = box, margin = 1.08) {
     boxFramed = box.clone();
-    const dist = defaultDistance();
-    controls.maxDistance = Math.max(controls.maxDistance, 36, dist * 1.8);
-    camera.far = Math.max(camera.far, 200, dist * 4 + box.getBoundingSphere(new Sphere()).radius * 2);
+    fitMargin = margin;
+    extentFramed = extent.clone();
+    const ed = extentDistance();
+    controls.maxDistance = Math.max(controls.maxDistance, 36, defaultDistance() * 1.8, ed * 1.8);
+    camera.far = Math.max(camera.far, 200, ed * 4 + extent.getBoundingSphere(new Sphere()).radius * 2);
     camera.updateProjectionMatrix();
-    fitLight(box, true);
+    fitLight(extent, true);
   }
 
   function resize() {

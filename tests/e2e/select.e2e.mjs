@@ -353,6 +353,8 @@ test('拖曳放開後游標不動，滑過狀態與名稱標籤等於放開位�
     const start = await page.evaluate(`(() => {
       for (let y = 40; y < innerHeight - 200; y += 20) for (let x = 40; x < innerWidth - 450; x += 20) {
         if (Math.hypot(x - ${mito.x}, y - ${mito.y}) < 100 || !window.__cell.hitAt(x, y)) continue;
+        if (document.elementFromPoint(x, y) !== document.getElementById('stage') || document.elementFromPoint(x + 50, y) !== document.getElementById('stage')) continue; // 被介面蓋住的點不能拖曳
+        if ((window.__cell.hitAt(x + 50, y) || {}).id === window.__cell.hitAt(x, y).id) continue; // 放開位置要有機會是別的構造，這個測試才有鑑別力
         return { x, y, id: window.__cell.hitAt(x, y).id };
       }
       return null;

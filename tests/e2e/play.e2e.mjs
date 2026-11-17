@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { openPage } from '../../scripts/cdp.mjs';
-import { ORGANELLES, ORGANELLE_IDS } from '../../web/src/organelles.js';
+import { ORGANELLES, ORGANELLE_IDS, QUIZ_IDS } from '../../web/src/organelles.js';
 
 const zh = (id) => ORGANELLES.find((o) => o.id === id).zh;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -77,13 +77,14 @@ const rootPos = (page, id, inst) => page.evaluate(`(() => {
 })()`);
 const sub = (a, b) => a.map((v, i) => v - b[i]);
 const nearArr = (a, b, tol, msg) => a.forEach((v, i) => assert.ok(Math.abs(v - b[i]) <= tol, `${msg} [${i}] ${v} vs ${b[i]}`));
-// 整個模型的外框（各個體根的世界外框聯集）八個角投影後的螢幕座標（NDC）
-const cornersNdc = (page) => page.evaluate(`(() => {
+// 拆解取景所框的外框（各個體根的世界外框聯集，不含外殼與貼著細胞壁的原生質絲、微管、微絲）八個角投影後的螢幕座標（NDC）
+const SKIP = ['cell_wall', 'middle_lamella', 'cell_membrane', 'cytoplasm', 'plasmodesmata', 'microtubule', 'actin_filament'];
+const cornersNdc = (page, skip = SKIP) => page.evaluate(`(() => {
   const { index, view } = window.__cell;
   view.scene.updateMatrixWorld(true);
   const Box = index.box.constructor;
   const box = new Box();
-  for (const e of index.byId.values()) for (const r of e.instances) box.union(new Box().setFromObject(r));
+  for (const [id, e] of index.byId) if (!${JSON.stringify(skip)}.includes(id)) for (const r of e.instances) box.union(new Box().setFromObject(r));
   view.camera.updateMatrixWorld();
   const out = [];
   for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
@@ -94,15 +95,39 @@ const cornersNdc = (page) => page.evaluate(`(() => {
 })()`);
 const camDist = (page) => page.evaluate(`(() => { const { camera, controls } = window.__cell.view; return camera.position.distanceTo(controls.target); })()`);
 
-const labelInfo = (page) => page.evaluate(`[...document.querySelectorAll('#labels [data-id]')].map((el) => {
-  const r = el.getBoundingClientRect();
-  return { id: el.dataset.id, text: el.textContent, shown: el.getClientRects().length > 0, left: r.left, top: r.top, right: r.right, bottom: r.bottom, selected: el.classList.contains('selected') };
-})`);
+const labelInfo = (page) => page.evaluate(`(() => {
+  const gs = Object.fromEntries([...document.querySelectorAll('#labels g[data-for]')].map((g) => [g.dataset.for, g]));
+  return [...document.querySelectorAll('#labels [data-id]')].map((el) => {
+    const r = el.getBoundingClientRect();
+    const g = gs[el.dataset.id];
+    const shown = el.getClientRects().length > 0;
+    const ln = g.querySelector('line');
+    const dot = { x: Number(g.querySelector('circle').getAttribute('cx')), y: Number(g.querySelector('circle').getAttribute('cy')) };
+    const leader = Math.hypot(Number(ln.getAttribute('x2')) - Number(ln.getAttribute('x1')), Number(ln.getAttribute('y2')) - Number(ln.getAttribute('y1')));
+    return { id: el.dataset.id, text: el.textContent, shown, dotShown: g.getAttribute('visibility') === 'visible', dot, leader,
+      left: r.left, top: r.top, right: r.right, bottom: r.bottom, selected: el.classList.contains('selected') };
+  });
+})()`);
 const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 const assertNoOverlap = (labels, msg) => {
   const shown = labels.filter((l) => l.shown);
   for (let i = 0; i < shown.length; i++) for (let j = i + 1; j < shown.length; j++) {
     assert.equal(overlaps(shown[i], shown[j]), false, `${msg}：標籤「${shown[i].text}」與「${shown[j].text}」重疊`);
+  }
+};
+// 一般與拆解狀態都要：至少 18 個可見、13 個可點選的全部可見、藥丸不重疊也不蓋住任何可見的圓點、引線不超過 150 像素
+const assertLayout = (labels, msg) => {
+  const shown = labels.filter((l) => l.shown);
+  assert.ok(shown.length >= 18, `${msg}：可見標籤至少 18 個，實際 ${shown.length}（隱藏：${labels.filter((l) => !l.shown).map((l) => l.id)}）`);
+  for (const id of QUIZ_IDS) assert.ok(labels.find((l) => l.id === id).shown, `${msg}：可點選的 ${id} 標籤應可見`);
+  assertNoOverlap(labels, msg);
+  for (const l of shown) {
+    assert.equal(l.dotShown, true, `${msg}：${l.id} 的圓點應顯示`);
+    assert.ok(l.left >= 0 && l.top >= 0 && l.right <= 1280 && l.bottom <= 800, `${msg}：${l.id} 完整在視窗內`);
+    assert.ok(l.leader <= 150, `${msg}：${l.id} 的引線長 ${l.leader.toFixed(1)} 超過 150`);
+    for (const o of shown) {
+      assert.equal(overlaps({ left: o.dot.x - 3.5, right: o.dot.x + 3.5, top: o.dot.y - 3.5, bottom: o.dot.y + 3.5 }, l), false, `${msg}：藥丸「${l.text}」蓋住「${o.text}」的圓點`);
+    }
   }
 };
 const assertClean = (page) => {
@@ -163,14 +188,15 @@ test('拆解：位移、放大、跟隨、外殼殘影、點選、鏡頭與還�
       window.__cell.index.byId.get(id).meshes.map((m) => [m.material.transparent, m.material.opacity, m.castShadow])))()`);
     assert.ok(ghost.every(([t, o, c]) => t && o <= 0.16 && c === false), '拆解時外殼應是殘影（半透明、不投影）');
 
-    // 六個構造：在「同一個鏡頭位置」下，任兩個的畫面距離都比拆解前大（鏡頭會為了讓放大的外殼完整入鏡而拉遠，
-    // 所以在拆解後的鏡頭下，整體只是等比例縮小，不能拿來比距離）
+    // 六個構造：各狀態的預設鏡頭下，任兩個的畫面距離都比拆解前大（拆解取景只框散開的構造，所以畫面上真的散開）
     const pose1 = await getPose(page);
     const atPose0 = await repPoints(page, pose0, [...SIX, 'chromatin']);
     const d0 = pairDistances(before, SIX);
-    const d1 = pairDistances(atPose0, SIX);
+    const after1 = {};
+    for (const id of SIX) after1[id] = await page.evaluate(`window.__cell.repScreenPoint(${JSON.stringify(id)})`);
+    const d1 = pairDistances(after1, SIX); // 各狀態的預設鏡頭下：拆解前用一般預設位置、拆解後用拆解預設位置
     for (const k of Object.keys(d0)) assert.ok(d1[k] > d0[k], `${k}：拆解後 ${d1[k].toFixed(1)} 應大於拆解前 ${d0[k].toFixed(1)}`);
-    // 跟隨：染色質與細胞核的畫面距離（同一個鏡頭下）與拆解前相差不到 2 像素；世界座標差則完全相同
+    // 跟隨：染色質與細胞核的畫面距離（在拆解前的同一個鏡頭位置下量）與拆解前相差不到 2 像素；世界座標差則完全相同
     const gap0 = dist(before.chromatin, before.nucleus);
     const gap1 = dist(atPose0.chromatin, atPose0.nucleus);
     assert.ok(Math.abs(gap1 - gap0) < 2, `染色質與細胞核的距離應不變：${gap0.toFixed(2)} → ${gap1.toFixed(2)}`);
@@ -183,9 +209,31 @@ test('拆解：位移、放大、跟隨、外殼殘影、點選、鏡頭與還�
 
     // 拆解後的鏡頭：整個模型完整入畫面
     const dist1 = await camDist(page);
-    assert.ok(dist1 > dist0 * 1.5, `拆解後鏡頭應拉遠：${dist0.toFixed(1)} → ${dist1.toFixed(1)}`);
+    assert.ok(dist1 > dist0, `拆解後鏡頭應拉遠：${dist0.toFixed(1)} → ${dist1.toFixed(1)}`);
+    const lim = await page.evaluate('({ max: window.__cell.view.controls.maxDistance, far: window.__cell.view.camera.far })');
+    assert.ok(lim.max > dist1 * 1.5 && lim.far > dist1 + 25, `maxDistance 與 far 應涵蓋含外殼的完整拆解模型：${JSON.stringify(lim)}`);
+    // 散開的構造佔畫面寬度六成以上；核仁與細胞核在畫面上的輪廓（世界外接球的投影）不重疊
+    const ndc = (await cornersNdc(page)).out;
+    const width = (Math.max(...ndc.map((c) => c[0])) - Math.min(...ndc.map((c) => c[0]))) / 2;
+    assert.ok(width >= 0.6, `散開的構造應佔畫面寬度六成以上，實際 ${(width * 100).toFixed(1)}%`);
+    const circle = (id) => page.evaluate(`(() => {
+      const { index, view } = window.__cell;
+      view.scene.updateMatrixWorld(true); view.camera.updateMatrixWorld();
+      const box = new index.box.constructor().setFromObject(index.byId.get(${JSON.stringify(id)}).rep);
+      const c = box.getCenter(view.camera.position.clone());
+      const r = Math.max(...box.getSize(view.camera.position.clone()).toArray()) / 2; // 近似球形的構造：外接球半徑
+      const right = view.camera.position.clone().set(1, 0, 0).transformDirection(view.camera.matrixWorld);
+      const px = (v) => { const p = v.clone().project(view.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; };
+      const p0 = px(c);
+      const p1 = px(c.clone().addScaledVector(right, r));
+      return { x: p0[0], y: p0[1], r: Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) };
+    })()`);
+    const cNuc = await circle('nucleus');
+    const cNcl = await circle('nucleolus');
+    assert.ok(dist(cNuc, cNcl) > cNuc.r + cNcl.r, `核仁與細胞核在畫面上的輪廓不可重疊：圓心距 ${dist(cNuc, cNcl).toFixed(1)}，半徑和 ${(cNuc.r + cNcl.r).toFixed(1)}`);
+
     for (const [x, y, z] of (await cornersNdc(page)).out) {
-      assert.ok(Math.abs(x) <= 1 && Math.abs(y) <= 1 && z < 1, `拆解後外框的角應在畫面內：${x.toFixed(2)}, ${y.toFixed(2)}`);
+      assert.ok(Math.abs(x) <= 1.001 && Math.abs(y) <= 1.001 && z < 1, `拆解後外框的角應在畫面內：${x.toFixed(2)}, ${y.toFixed(2)}`);
     }
     await page.screenshot('assets/preview/web-exploded.png');
 
@@ -204,7 +252,7 @@ test('拆解：位移、放大、跟隨、外殼殘影、點選、鏡頭與還�
     nearArr(home.p, pose1.p, 1e-3, '取消選取後鏡頭回到拆解狀態的預設位置');
     nearArr(home.t, pose1.t, 1e-3, '取消選取後目標點回到拆解狀態的預設位置');
     for (const [x, y, z] of (await cornersNdc(page)).out) {
-      assert.ok(Math.abs(x) <= 1 && Math.abs(y) <= 1 && z < 1, '取消選取後外框的角仍在畫面內');
+      assert.ok(Math.abs(x) <= 1.001 && Math.abs(y) <= 1.001 && z < 1, '取消選取後外框的角仍在畫面內');
     }
 
     // 再按一次：組合，回到拆解前
@@ -279,7 +327,7 @@ test('有選取時切換拆解：選取保留，動畫結束後鏡頭重新對�
     await clickSel(page, '#panel-close');
     await page.waitFor('window.__cell.store.getState().selected === null');
     await settleCamera(page);
-    for (const [x, y, z] of (await cornersNdc(page)).out) assert.ok(Math.abs(x) <= 1 && Math.abs(y) <= 1 && z < 1);
+    for (const [x, y, z] of (await cornersNdc(page)).out) assert.ok(Math.abs(x) <= 1.001 && Math.abs(y) <= 1.001 && z < 1);
     // 組合回去時也一樣：先選取、再組合
     await clickList(page, 'golgi');
     await settleCamera(page);
@@ -296,7 +344,7 @@ test('有選取時切換拆解：選取保留，動畫結束後鏡頭重新對�
   }
 });
 
-test('名稱標籤：20 個、不重疊、可點選、跟著拆解移動、靜止時不閃爍', async () => {
+test('名稱標籤：20 個、引線標註、不重疊、可點選、跟著拆解移動、靜止時不閃爍', async () => {
   const page = await boot();
   try {
     await sleep(300);
@@ -310,29 +358,16 @@ test('名稱標籤：20 個、不重疊、可點選、跟著拆解移動、靜�
     assert.equal(labels.length, 20);
     assert.deepEqual(labels.map((l) => l.id), ORGANELLE_IDS, '標籤順序與 20 個 id 的既定順序相同');
     for (const l of labels) assert.equal(l.text, zh(l.id), `${l.id} 的標籤文字`);
-    const shown = labels.filter((l) => l.shown);
-    assert.ok(shown.length >= 10, `可見標籤至少 10 個，實際 ${shown.length}`);
-    assertNoOverlap(labels, '組合狀態');
-    for (const l of shown) assert.ok(l.left >= 0 && l.top >= 0 && l.right <= 1280 && l.bottom <= 800, `${l.id} 完整在視窗內`);
+    assertLayout(labels, '組合狀態');
     // 靜止時不閃爍：連續取樣的顯示與位置完全相同
     const key = (ls) => JSON.stringify(ls.map((l) => [l.id, l.shown, l.left, l.top]));
     const k0 = key(labels);
     for (let i = 0; i < 6; i++) { await sleep(60); assert.equal(key(await labelInfo(page)), k0, '鏡頭靜止時標籤不可跳動或閃爍'); }
     await page.screenshot('assets/preview/web-labels.png');
 
-    // 點「皮層微管」的標籤：預設視角下它被優先順序較前的標籤擠掉，把鏡頭拉近到它旁邊再點
-    await page.evaluate(`(() => {
-      const { camera, controls } = window.__cell.view;
-      const a = window.__cell.index.byId.get('microtubule').anchor.getWorldPosition(camera.position.clone());
-      controls.target.copy(a);
-      camera.position.copy(a).add(camera.position.clone().set(0.62, 0.48, 0.62).normalize().multiplyScalar(4));
-      controls.update();
-    })()`);
-    await frames(page, 3);
-    labels = await labelInfo(page);
+    // 點「皮層微管」的標籤：預設鏡頭位置就看得到，不必先搬動鏡頭
     const mt = labels.find((l) => l.id === 'microtubule');
-    assert.ok(mt.shown, '拉近後「皮層微管」的標籤應可見');
-    assertNoOverlap(labels, '拉近後');
+    assert.ok(mt.shown, '預設位置下「皮層微管」的標籤應可見');
     const mp = { x: (mt.left + mt.right) / 2, y: (mt.top + mt.bottom) / 2 };
     assert.equal(await page.evaluate(`document.elementFromPoint(${mp.x}, ${mp.y}).closest('#labels .label')?.dataset.id`), 'microtubule', '標籤中心點上方就是它自己（只有標籤攔截滑鼠）');
     await page.click(mp.x, mp.y);
@@ -350,7 +385,7 @@ test('名稱標籤：20 個、不重疊、可點選、跟著拆解移動、靜�
     await page.waitFor('window.__cell.store.getState().selected === null');
     await settleCamera(page);
 
-    // 拆解：同一個標籤的位置跟著構造移動（在同一個鏡頭位置下比較）
+    // 拆解：標籤跟著構造移動
     const rest = await labelInfo(page);
     await clickSel(page, '#btn-explode');
     await page.waitFor('window.__cell.explodeProgress() === 1', 3000);
@@ -358,24 +393,14 @@ test('名稱標籤：20 個、不重疊、可點選、跟著拆解移動、靜�
     await frames(page, 3);
     const exploded = await labelInfo(page);
     assert.equal(exploded.length, 20);
-    assert.ok(exploded.filter((l) => l.shown).length >= 10, '拆解後可見標籤至少 10 個');
-    assertNoOverlap(exploded, '拆解狀態');
-    const pose1 = await getPose(page);
-    await setPose(page, pose0);
-    await frames(page, 3);
-    const atRest = await labelInfo(page);
-    await setPose(page, pose1);
-    await frames(page, 3);
-    // 回到組合前的鏡頭位置，標籤的位置要和組合狀態的不同
+    assertLayout(exploded, '拆解狀態');
+    const moved = rest.filter((r) => r.shown && exploded.find((x) => x.id === r.id).shown
+      && Math.hypot(r.dot.x - exploded.find((x) => x.id === r.id).dot.x, r.dot.y - exploded.find((x) => x.id === r.id).dot.y) > 10).map((r) => r.id);
+    assert.ok(moved.length >= 10, `拆解前後同一個標籤的位置應跟著改變，實際只有 ${moved.length} 個`);
     await clickSel(page, '#btn-labels'); // 先關再開：驗證重新顯示後位置正確
     await clickSel(page, '#btn-labels');
     await frames(page, 3);
-    const moved = [];
-    for (const l of atRest) {
-      const r = rest.find((x) => x.id === l.id);
-      if (l.shown && r.shown && Math.hypot(l.left - r.left, l.top - r.top) > 10) moved.push(l.id);
-    }
-    assert.ok(moved.length >= 3, `拆解後（同一個鏡頭下）至少 3 個標籤的位置應改變，實際 ${moved}`);
+    assertLayout(await labelInfo(page), '關再開之後');
     // 靜止時不閃爍（拆解狀態）
     const k1 = key(await labelInfo(page));
     for (let i = 0; i < 6; i++) { await sleep(60); assert.equal(key(await labelInfo(page)), k1, '拆解狀態下靜止時標籤不閃爍'); }

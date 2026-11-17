@@ -4,7 +4,8 @@ import { easeInOutCubic } from './lid.js';
 
 // 拆解（爆炸圖）：讓各個體從模型中心向外散開。只動「個體根節點」的位置與縮放，不動網格與材質。
 export const SPREAD = 0.9;                       // 每個個體沿「中心到自己」的方向多走 SPREAD 倍的距離
-export const EXTRA = { nucleolus: [1.2, 1.0, 1.2] }; // 額外位移：核仁要離開細胞核的剖面
+// 額外位移：核仁從細胞核剖面的開口往畫面右下前方移出；粗糙內質網沿原本偏離細胞核的方向多推開一些（附著型核糖體跟隨它）
+export const EXTRA = { nucleolus: [2.8, 0.3, 0.2], rough_er: [-0.8, 0.35, -0.45] };
 export const DURATION = 1.0;                     // 秒；easeInOutCubic
 
 // 以 id 為單位：不自己算位移，而是跟著所屬構造的代表個體做完全相同的位移（染色質留在細胞核裡、細胞質絲留在液泡裡）。
@@ -99,13 +100,14 @@ export function createExploder(index) {
     applied = e;
   }
 
-  // 完全拆解時整個模型的外框（世界座標）：放大的個體以中心縮放其外框，其餘平移其外框。
-  let exploded = null;
-  function explodedBox() {
-    if (exploded) return exploded.clone();
+  // 完全拆解時整個模型的外框（世界座標；skipIds 內的 id 不計）：放大的個體以中心縮放其外框，其餘平移其外框。
+  const boxCache = new Map();
+  function explodedBox(skipIds = []) {
+    const key = skipIds.join(",");
+    if (boxCache.has(key)) return boxCache.get(key).clone();
     const box = new Box3();
     for (const n of nodes) {
-      if (n.box0.isEmpty()) continue;
+      if (n.box0.isEmpty() || skipIds.includes(n.id)) continue;
       const b = n.box0.clone();
       if (n.rule.kind === 'scale') {
         b.min.sub(c).multiplyScalar(SCALE).add(c);
@@ -113,7 +115,7 @@ export function createExploder(index) {
       } else b.translate(n.disp);
       box.union(b);
     }
-    exploded = box;
+    boxCache.set(key, box);
     return box.clone();
   }
 

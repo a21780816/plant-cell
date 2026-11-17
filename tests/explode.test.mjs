@@ -9,14 +9,15 @@ const near = (a, b, msg) => {
 
 test('常數：SPREAD、EXTRA、FOLLOW', () => {
   assert.equal(SPREAD, 0.9);
-  assert.deepEqual(EXTRA, { nucleolus: [1.2, 1.0, 1.2] });
+  assert.deepEqual(EXTRA, { nucleolus: [2.8, 0.3, 0.2], rough_er: [-0.8, 0.35, -0.45] });
   assert.deepEqual(FOLLOW, { chromatin: 'nucleus', transvacuolar_strand: 'vacuole' });
 });
 
 test('explodeTarget：position + (position - center) * SPREAD + EXTRA', () => {
   near(explodeTarget([2, 0, 0], [0, 0, 0], 'golgi'), [3.8, 0, 0]);
   near(explodeTarget([0, 0, 0], [0, 0, 0], 'vacuole'), [0, 0, 0]);
-  near(explodeTarget([1, 1, 1], [1, 1, 1], 'nucleolus'), [2.2, 2.0, 2.2]);
+  near(explodeTarget([1, 1, 1], [1, 1, 1], 'nucleolus'), [3.8, 1.3, 1.2]);
+  near(explodeTarget([1, 1, 1], [1, 1, 1], 'rough_er'), [0.2, 1.35, 0.55]);
 });
 
 test('explodeTarget：中心不在原點時以中心為準', () => {

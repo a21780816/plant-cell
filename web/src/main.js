@@ -5,7 +5,7 @@ import { createScene } from './scene.js';
 import { parseModel, indexModel, findOrganelle, findInstanceRoot } from './model.js';
 import { applyMaterials } from './materials.js';
 import { ORGANELLES, INTRO, getOrganelle } from './organelles.js';
-import { GHOST_IDS } from './config.js';
+import { GHOST_IDS, SCALE_IDS } from './config.js';
 import { createStore } from './state.js';
 import { createPicker } from './picking.js';
 import { createHighlighter } from './highlight.js';
@@ -50,8 +50,11 @@ async function main() {
   view.scene.add(model);
   const lid = createLid(index); // 開場時蓋著；按下開始後掀開
   const exploder = createExploder(index);
-  const explodedBox = exploder.explodedBox();
-  const boxFor = (exploded) => (exploded ? explodedBox : index.box); // 各狀態下「整個模型完整入鏡」的外框
+  // 各狀態的取景：box 是預設鏡頭要完整框住的外框（拆解時只框真正散開的構造；外殼與貼著細胞壁的原生質絲、微管、微絲（SCALE_IDS）撐滿整面壁，框它們畫面只會剩 55%，所以允許超出畫面），
+  // extent 是使用者縮到最遠、遠平面、陰影範圍要涵蓋的完整外框（含外殼）。
+  const explodedFrame = { box: exploder.explodedBox(SCALE_IDS), extent: exploder.explodedBox(), margin: 1.0 }; // 留白 1.0：散開的構造才能佔畫面寬度六成以上
+  const restFrame = { box: index.box, extent: index.box, margin: 1.08 };
+  const frameOf = (exploded) => (exploded ? explodedFrame : restFrame);
 
   view.frame(index.box);
 
@@ -69,7 +72,7 @@ async function main() {
   const moves = createCameraMoves({
     camera: view.camera, controls: view.controls,
     defaultPose: view.defaultPose, setUserMoved: view.setUserMoved,
-    applyDefault: () => view.frame(boxFor(store.getState().exploded)), // 回到預設後完整套用（含 maxDistance、far、陰影）並重設旗標
+    applyDefault: () => { const f = frameOf(store.getState().exploded); return view.frame(f.box, f.extent, f.margin); }, // 回到預設後完整套用（含 maxDistance、far、陰影）並重設旗標
   });
   const panel = mountPanel(document.getElementById('panel'), {
     palette, onClose: () => store.dispatch({ type: 'deselect' }),
@@ -182,7 +185,7 @@ async function main() {
     if (s.exploded !== prev.exploded) {
       noteActivity();
       exploder.set(s.exploded);
-      view.setFrameBox(boxFor(s.exploded)); // 之後的預設位置（含取消選取、視窗縮放）以這個狀態的外框為準
+      { const f = frameOf(s.exploded); view.setFrameBox(f.box, f.extent, f.margin); } // 之後的預設位置（含取消選取、視窗縮放）以這個狀態的外框為準
       if (s.selected) pendingRefocus = true;
       else moves.home(EXPLODE_MOVE);
     }
