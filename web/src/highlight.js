@@ -1,6 +1,7 @@
 import { Color } from 'three';
-import { findOrganelle, findInstanceRoot } from './model.js';
-import { GHOST_IDS } from './config.js';
+import { findOrganelle } from './model.js';
+import { instanceOfMesh } from './picking.js';
+import { GHOST_IDS, ghostOrderOf } from './config.js';
 
 // 發亮與變暗全用材質參數漸變，不用後製。
 const EMISSIVE = { hover: 0.15, selected: 0.45, family: 0.2 };
@@ -20,20 +21,32 @@ const ROLE_TARGET = {
   ghost: () => ({ emi: 0, fade: GHOST_MIX, ghost: 1 }),
 };
 
+// 趨近目標；足夠接近時直接等於目標，收斂後的數值才精確（還原不留殘差）。
+const approach = (v, t, k) => {
+  const n = v + (t - v) * k;
+  return Math.abs(t - n) < 1e-3 ? t : n;
+};
+
 export function createHighlighter(index) {
   const recs = [];
   for (const [id, entry] of index.byId) {
     for (const mesh of entry.meshes) {
       const mat = mesh.material.clone(); // 每個網格各自一份材質，才能逐個體發亮
       mesh.material = mat;
-      const root = findInstanceRoot(mesh);
+      const own = findOrganelle(mesh) ?? id;
+      const baseEI = mat.emissive.getHex() === 0 ? 0 : mat.emissiveIntensity;
+      // 先統一成「發光色＝本色、強度＝基準」，載入後的快照與漸變收斂後的值才會精確相同（視覺上等價）。
+      mat.emissive.copy(mat.color);
+      mat.emissiveIntensity = baseEI;
       recs.push({
         mesh, mat,
-        id: findOrganelle(mesh) ?? id,
-        inst: root ? root.userData.inst : null,
-        isShell: GHOST_IDS.includes(findOrganelle(mesh) ?? id),
+        id: own,
+        inst: instanceOfMesh(mesh, index),
+        isShell: GHOST_IDS.includes(own),
+        ghostOrder: GHOST_IDS.includes(own) ? ghostOrderOf(own, mesh) : null,
+        baseOrder: mesh.renderOrder,
         baseColor: mat.color.clone(),
-        baseEI: mat.emissive.getHex() === 0 ? 0 : mat.emissiveIntensity,
+        baseEI,
         baseOpacity: mat.opacity,
         baseTransparent: mat.transparent,
         baseDepthWrite: mat.depthWrite,
@@ -83,6 +96,7 @@ export function createHighlighter(index) {
     }
     mat.depthWrite = ghosting ? false : rec.baseDepthWrite;
     mat.opacity = rec.baseOpacity + (Math.min(rec.baseOpacity, GHOST_OPACITY) - rec.baseOpacity) * cur.ghost;
+    rec.mesh.renderOrder = ghosting && rec.ghostOrder !== null ? rec.ghostOrder : rec.baseOrder; // 殘影時固定由外到內的順序
     rec.mesh.castShadow = rec.baseCast && cur.ghost < 0.5; // 殘影不投影，否則看不見的外殼會把內部遮暗
   }
 
@@ -94,10 +108,10 @@ export function createHighlighter(index) {
       const t = targetOf(rec, breath);
       const c = rec.cur;
       const w = rec.written;
-      c.emi += (t.emi - c.emi) * k;
-      c.fade += (t.fade - c.fade) * k;
-      c.ghost += (t.ghost - c.ghost) * k;
-      if (w && Math.abs(c.emi - w.emi) < 1e-4 && Math.abs(c.fade - w.fade) < 1e-4 && Math.abs(c.ghost - w.ghost) < 1e-4) continue;
+      c.emi = approach(c.emi, t.emi, k);
+      c.fade = approach(c.fade, t.fade, k);
+      c.ghost = approach(c.ghost, t.ghost, k);
+      if (w && c.emi === w.emi && c.fade === w.fade && c.ghost === w.ghost) continue;
       write(rec);
       rec.written = { emi: c.emi, fade: c.fade, ghost: c.ghost };
     }

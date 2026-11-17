@@ -12,6 +12,7 @@ import { createHighlighter } from './highlight.js';
 import { createCameraMoves } from './camera-moves.js';
 import { mountPanel } from './ui/panel.js';
 import { mountList } from './ui/list.js';
+import { placeHoverName } from './ui/hover-name.js';
 
 const canvas = document.getElementById('stage');
 const root = document.documentElement;
@@ -40,6 +41,7 @@ async function main() {
   const moves = createCameraMoves({
     camera: view.camera, controls: view.controls,
     defaultPose: view.defaultPose, setUserMoved: view.setUserMoved,
+    applyDefault: () => view.frame(index.box), // 回到預設後完整套用（含 maxDistance、far、陰影）並重設旗標
   });
   const panel = mountPanel(document.getElementById('panel'), {
     palette, onClose: () => store.dispatch({ type: 'deselect' }),
@@ -60,26 +62,40 @@ async function main() {
   const picker = createPicker({
     dom: canvas, camera: view.camera, index, isPickable,
     onHover: (h) => store.dispatch(h ? { type: 'hover', id: h.id, inst: h.inst } : { type: 'unhover' }),
+    onPressChange: () => paintHover(), // 拖曳中隱藏名稱與手指游標
     onPick: (h) => {
       if (h) store.dispatch({ type: 'select', id: h.id, inst: h.inst });
       else if (store.getState().selected) store.dispatch({ type: 'deselect' });
     },
   });
 
-  // #hover-name 跟著游標（右下 14 像素）
+  // #hover-name 跟著游標（右下 14 像素，靠邊時翻到另一側，完整留在視窗內）
+  let pointer = { x: 0, y: 0 };
+  function placeLabel() {
+    const p = placeHoverName({
+      x: pointer.x, y: pointer.y, width: hoverName.offsetWidth, height: hoverName.offsetHeight,
+      viewportWidth: window.innerWidth, viewportHeight: window.innerHeight,
+    });
+    hoverName.style.transform = `translate(${p.left}px, ${p.top}px)`;
+  }
   canvas.addEventListener('pointermove', (e) => {
-    hoverName.style.transform = `translate(${e.clientX + 14}px, ${e.clientY + 14}px)`;
+    pointer = { x: e.clientX, y: e.clientY };
+    if (!hoverName.hidden) placeLabel();
   });
+  function paintHover() {
+    const h = store.getState().hovered;
+    const o = h && getOrganelle(h.id);
+    const show = !!o && !picker.pressed;
+    if (o) hoverName.textContent = o.zh;
+    hoverName.hidden = !show;
+    canvas.style.cursor = show ? 'pointer' : '';
+    if (show) placeLabel();
+  }
 
   let prev = { selected: undefined, hovered: undefined };
   function render(s) {
     highlighter.apply(s);
-    if (s.hovered !== prev.hovered) {
-      const o = s.hovered && getOrganelle(s.hovered.id);
-      hoverName.hidden = !o;
-      if (o) hoverName.textContent = o.zh;
-      canvas.style.cursor = o ? 'pointer' : '';
-    }
+    if (s.hovered !== prev.hovered) paintHover();
     if (s.selected !== prev.selected) {
       const sel = s.selected;
       list.setActive(sel ? sel.id : null);
@@ -163,11 +179,17 @@ async function main() {
   };
 
   let first = true;
+  const camSeen = new Float64Array(16);
   view.start((dt) => {
     dts.push(dt);
     if (dts.length > 60) dts.shift();
     moves.update(dt);
     highlighter.update(dt);
+    // 鏡頭在動（動畫或阻尼）而游標不動時，滑過狀態要跟著畫面重算；每畫面最多一次
+    const me = view.camera.matrixWorld.elements;
+    let moved = false;
+    for (let i = 0; i < 16; i++) if (me[i] !== camSeen[i]) { moved = true; camSeen[i] = me[i]; }
+    if (moved) picker.refresh();
     if (first) { first = false; root.dataset.cellReady = '1'; }
   });
 }

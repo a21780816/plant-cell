@@ -12,8 +12,8 @@ const SHELL_DIST = 14;
 // 平順的鏡頭移動。保持當下的觀看方向（focus）或轉向預設方向（home），
 // 目標點、距離、方向各自內插；使用者一開始拖曳或滾輪（OrbitControls 的 start 事件）就中止。
 // defaultPose() 與 setUserMoved() 由 scene.js 提供：動畫期間標記「使用者動過鏡頭」，
-// 避免 resize() 把鏡頭拉回預設；回到預設位置後重設旗標，resize 才會重新取景。
-export function createCameraMoves({ camera, controls, defaultPose = null, setUserMoved = () => {} }) {
+// 避免 resize() 把鏡頭拉回預設；回到預設位置後由 applyDefault（view.frame）完整套用並重設旗標。
+export function createCameraMoves({ camera, controls, defaultPose = null, setUserMoved = () => {}, applyDefault = null }) {
   let move = null;
 
   function begin(resolveEnd, onDone) {
@@ -46,7 +46,7 @@ export function createCameraMoves({ camera, controls, defaultPose = null, setUse
       const p = defaultPose();
       const off = p.position.clone().sub(p.target);
       return { target: p.target, len: off.length(), dir: off.normalize() };
-    }, () => setUserMoved(false));
+    }, () => (applyDefault ? applyDefault() : setUserMoved(false))); // 結束時完整套用預設鏡頭（含 maxDistance、far）
   }
 
   function update(dt) {

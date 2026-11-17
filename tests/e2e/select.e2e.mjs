@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { openPage } from '../../scripts/cdp.mjs';
 import { ORGANELLES, ORGANELLE_IDS } from '../../web/src/organelles.js';
+import { GHOST_IDS, ghostOrderOf } from '../../web/src/config.js';
 
 const zh = (id) => ORGANELLES.find((o) => o.id === id).zh;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -33,11 +34,47 @@ const listBtn = (page, id) => page.evaluate(`(() => {
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 })()`);
 const clickList = async (page, id) => { const p = await listBtn(page, id); await page.click(p.x, p.y); };
+// 材質與網格狀態的快照；載入完成時記下，之後用來檢查「取消選取後完全還原」。
+const SNAP_JS = `(() => {
+  const take = () => [...window.__cell.index.byId.values()].flatMap((e) => e.meshes).map((m) => ({
+    n: m.name, t: m.material.transparent, d: m.material.depthWrite, o: m.material.opacity, r: m.renderOrder,
+    c: m.material.color.toArray(), ec: m.material.emissive.toArray(), e: m.material.emissiveIntensity, s: m.castShadow,
+  }));
+  window.__snapDiffs = () => {
+    const a = window.__snap0, b = take(), out = [];
+    a.forEach((x, i) => {
+      const y = b[i];
+      for (const k of Object.keys(x)) {
+        const xs = [].concat(x[k]), ys = [].concat(y[k]);
+        if (xs.some((v, j) => (typeof v === 'number' ? Math.abs(v - ys[j]) > 1e-6 : v !== ys[j]))) out.push(x.n + '.' + k + ' ' + xs + ' -> ' + ys);
+      }
+    });
+    return out;
+  };
+  window.__snap0 = take();
+})()`;
+const gridIds = (page) => page.evaluate(`(() => {
+  const ids = [];
+  for (let j = 0; j < 8; j++) for (let i = 0; i < 12; i++) {
+    const h = window.__cell.hitAt((i + 0.5) * innerWidth / 12, (j + 0.5) * innerHeight / 8);
+    if (h) ids.push(h.id);
+  }
+  return ids;
+})()`);
+const camState = (page) => page.evaluate(`(() => {
+  const { camera, controls } = window.__cell.view;
+  return [...camera.position.toArray(), ...controls.target.toArray(), controls.maxDistance, camera.far];
+})()`);
+const setInnerWidth = (page, w) => page.evaluate(`(() => {
+  Object.defineProperty(window, 'innerWidth', { value: ${w}, configurable: true });
+  window.dispatchEvent(new Event('resize'));
+})()`);
 const camPos = (page) => page.evaluate('window.__cell.view.camera.position.toArray()');
 
 test('選取、發亮、面板與清單', async () => {
   const page = await boot();
   try {
+    await page.evaluate(SNAP_JS);
     // 滑過：名稱與手指游標
     const nuc = await pointOf(page, 'nucleus');
     await page.mouseMove(nuc.x, nuc.y);
@@ -53,6 +90,33 @@ test('選取、發亮、面板與清單', async () => {
     await settle(page);
     await page.screenshot('assets/preview/web-selected.png');
 
+    // 變暗、殘影與射線穿透（漸變收斂後）
+    const dim = await page.evaluate(`(() => {
+      const { index } = window.__cell;
+      const snap = window.__snap0;
+      const meshes = [...index.byId.values()].flatMap((e) => e.meshes);
+      const dimHex = 0xD8D2C4;
+      const dist = (hex) => [16, 8, 0].reduce((s, sh) => s + Math.abs(((hex >> sh) & 255) - ((dimHex >> sh) & 255)), 0);
+      const ghosts = meshes.filter((m) => ${JSON.stringify(GHOST_IDS)}.includes(m.userData.organelle) || m.parent && ${JSON.stringify(GHOST_IDS)}.includes(m.parent.userData.organelle))
+        .map((m) => { const i = meshes.indexOf(m); return { n: m.name, id: m.userData.organelle, part: m.userData.part, t: m.material.transparent, d: m.material.depthWrite, o: m.material.opacity, r: m.renderOrder, base: snap[i].o }; });
+      const chloro = index.byId.get('chloroplast').meshes.map((m) => ({ now: dist(m.material.color.getHex()), was: dist(m.material.color.clone().fromArray(snap[meshes.indexOf(m)].c).getHex()) }));
+      const sel = index.byId.get('nucleus').meshes.map((m) => m.material.emissiveIntensity);
+      const others = meshes.filter((m) => !index.byId.get('nucleus').meshes.includes(m)).map((m) => m.material.emissiveIntensity);
+      return { ghosts, chloro, selMin: Math.min(...sel), othersMax: Math.max(...others) };
+    })()`);
+    assert.ok(dim.ghosts.length >= 12, '應找到所有外殼網格');
+    for (const g of dim.ghosts) {
+      const expected = ghostOrderOf(g.id, { userData: { part: g.part }, name: g.n });
+      assert.equal(g.t, true, `${g.n} 應為半透明`);
+      assert.equal(g.d, false, `${g.n} 不寫深度`);
+      assert.ok(g.o <= 0.15 + 1e-9 && g.o <= g.base + 1e-9, `${g.n} 不透明度 ${g.o}`);
+      assert.equal(g.r, expected, `${g.n} 的繪製順序`);
+      assert.notEqual(g.r, 0);
+    }
+    for (const c of dim.chloro) assert.ok(c.now < c.was * 0.6, `葉綠體應往背景色靠近：${JSON.stringify(c)}`);
+    assert.ok(dim.selMin > 0.38 && dim.selMin > dim.othersMax, `被選個體應比其他任何構造亮：${JSON.stringify(dim)}`);
+    assert.equal((await gridIds(page)).filter((id) => GHOST_IDS.includes(id)).length, 0, '殘影外殼不可擋住射線');
+
     // 縮放視窗不可把鏡頭拉回預設
     const before = await camPos(page);
     await page.evaluate("window.dispatchEvent(new Event('resize'))");
@@ -64,6 +128,8 @@ test('選取、發亮、面板與清單', async () => {
     await page.waitFor('window.__cell.store.getState().selected === null');
     assert.equal(await page.evaluate("document.getElementById('panel').hidden"), true, '按關閉鈕會取消選取並隱藏面板');
     await settle(page);
+    assert.ok((await gridIds(page)).includes('cell_wall'), '取消選取後外殼可被點到（證明上一個格點斷言有鑑別力）');
+    assert.deepEqual(await page.evaluate('window.__snapDiffs()'), [], '取消選取後材質應完全還原');
     const mito = await pointOf(page, 'mitochondrion');
     await page.click(mito.x, mito.y);
     await page.waitFor("window.__cell.store.getState().selected?.id === 'mitochondrion'");
@@ -118,8 +184,9 @@ test('選取、發亮、面板與清單', async () => {
     assert.ok(blank, '拉遠後應該有空白處');
     await page.click(blank.x, blank.y);
     await page.waitFor('window.__cell.store.getState().selected === null');
-    assert.equal(await page.evaluate("document.getElementById('panel').hidden"), true);
     await settle(page);
+    assert.deepEqual(await page.evaluate('window.__snapDiffs()'), [], '點空白取消後材質也應完全還原');
+    assert.equal(await page.evaluate("document.getElementById('panel').hidden"), true);
 
     // 從清單選皮層微管：整個構造發亮
     await clickList(page, 'microtubule');
@@ -164,6 +231,106 @@ test('觸控輕點可選取', async () => {
     await page.tap(nuc.x, nuc.y);
     await page.waitFor("window.__cell.store.getState().selected?.id === 'nucleus'");
     assert.equal(await text(page, '#panel-title'), zh('nucleus'));
+    assert.deepEqual(page.consoleErrors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+const near = (a, b, eps = 1e-6) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= eps);
+
+test('回到預設位置後的鏡頭與 view.frame(box) 的結果一致', async () => {
+  const page = await boot();
+  try {
+    await clickList(page, 'nucleus');
+    await page.waitFor('window.__cell.cameraBusy()');
+    await settle(page);
+    await page.click(...Object.values(await page.evaluate("(() => { const r = document.getElementById('panel-close').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()")));
+    await settle(page);
+    const before = await camState(page);
+    await page.evaluate('window.__cell.view.frame(window.__cell.index.box)');
+    assert.ok(near(before, await camState(page)), '回到預設後的鏡頭設定應與 frame() 相同');
+  } finally {
+    await page.close();
+  }
+});
+
+test('動畫中途縮放視窗：靠近動畫停在被選構造，回到預設動畫結束後完整套用', async () => {
+  const page = await boot();
+  try {
+    // 靠近動畫進行到一半時縮放
+    await clickList(page, 'nucleus');
+    await page.waitFor('window.__cell.cameraBusy()');
+    await sleep(150);
+    assert.equal(await page.evaluate('window.__cell.cameraBusy()'), true, '縮放時動畫應仍在進行');
+    await setInnerWidth(page, 760);
+    await settle(page);
+    const off = await page.evaluate(`(() => {
+      const { controls } = window.__cell.view;
+      const a = window.__cell.index.byId.get('nucleus').anchor;
+      return controls.target.distanceTo(a.getWorldPosition(controls.target.clone()));
+    })()`);
+    assert.ok(off < 1e-3, `動畫結束後鏡頭應停在被選構造，目標點偏差 ${off}`);
+    await setInnerWidth(page, 760); // 靜止後再縮放也不可拉回預設
+    await sleep(200);
+    assert.ok((await page.evaluate(`(() => { const { controls } = window.__cell.view; const a = window.__cell.index.byId.get('nucleus').anchor; return controls.target.distanceTo(a.getWorldPosition(controls.target.clone())); })()`)) < 1e-3);
+
+    // 回到預設的動畫進行到一半時縮放（變窄使預設距離變大）
+    await page.click(...Object.values(await page.evaluate("(() => { const r = document.getElementById('panel-close').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()")));
+    await page.waitFor('window.__cell.cameraBusy()');
+    await sleep(150);
+    await setInnerWidth(page, 420);
+    await settle(page);
+    const after = await camState(page);
+    await page.evaluate('window.__cell.view.frame(window.__cell.index.box)');
+    assert.ok(near(after, await camState(page)), '動畫中途縮放後，結束時的鏡頭、maxDistance、far 應與 frame() 相同');
+  } finally {
+    await page.close();
+  }
+});
+
+test('鏡頭在動而游標不動時，滑過狀態跟著重算；拖曳中隱藏名稱與手指游標', async () => {
+  const page = await boot();
+  try {
+    const nuc = await pointOf(page, 'nucleus');
+    await page.mouseMove(nuc.x, nuc.y);
+    await page.waitFor("window.__cell.store.getState().hovered?.id === 'nucleus' && !document.getElementById('hover-name').hidden");
+    // 程式移動鏡頭（游標不動）：滑過狀態必須等於游標底下實際打到的東西
+    await page.evaluate(`(() => {
+      const { camera, controls } = window.__cell.view;
+      camera.position.copy(controls.target).add({ x: 0.3, y: 36, z: 0.3 });
+      controls.update();
+    })()`);
+    await page.waitFor(`(() => {
+      const h = window.__cell.hitAt(${nuc.x}, ${nuc.y});
+      const s = window.__cell.store.getState().hovered;
+      return (h ? h.id + ':' + h.inst : '') === (s ? s.id + ':' + s.inst : '');
+    })()`);
+    const truth = await page.evaluate(`window.__cell.hitAt(${nuc.x}, ${nuc.y})`);
+    assert.notEqual(truth && truth.id, 'nucleus', '鏡頭移動後游標底下已經不是細胞核，這個斷言才有鑑別力');
+    assert.equal(await page.evaluate("document.getElementById('hover-name').hidden"), truth === null);
+
+    // 拖曳中：名稱標籤隱藏、游標不是手指
+    await page.evaluate("window.__cell.view.frame(window.__cell.index.box)");
+    await sleep(200);
+    const p2 = await pointOf(page, 'nucleus');
+    await page.mouseMove(p2.x, p2.y);
+    await page.waitFor("!document.getElementById('hover-name').hidden");
+    const drag = page.drag(p2.x, p2.y, p2.x + 160, p2.y + 20, 60);
+    let done = false;
+    drag.then(() => { done = true; });
+    const samples = [];
+    await sleep(80);
+    while (!done && samples.length < 25) {
+      samples.push(await page.evaluate("[document.getElementById('hover-name').hidden, getComputedStyle(document.getElementById('stage')).cursor]"));
+      await sleep(25);
+    }
+    await drag;
+    assert.ok(samples.length >= 5, '應該在拖曳中取到樣本');
+    for (const [hidden, cursor] of samples) {
+      assert.equal(hidden, true, '拖曳中名稱標籤應隱藏');
+      assert.notEqual(cursor, 'pointer');
+    }
     assert.deepEqual(page.consoleErrors, []);
   } finally {
     await page.close();
