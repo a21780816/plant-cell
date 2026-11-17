@@ -427,9 +427,12 @@ const disabledOf = (page, sel) => page.evaluate(`document.querySelector(${JSON.s
 const quizId = (page) => page.evaluate('window.__cell.quizCurrentId()');
 const progressText = (page) => textOf(page, '#quiz-progress');
 // 畫面上點得到的構造（排除 except）
-const visibleOther = async (page, except) => {
+const SHELLS = ['cell_wall', 'cell_membrane'];
+const IDLE_MS = 4000; // 與 web/src/main.js 的閒置自轉門檻相同
+const REVEAL_MS = 1800; // 與 web/src/main.js 的揭曉時間相同
+const visibleOther = async (page, except, skip = []) => {
   for (const id of QUIZ_IDS) {
-    if (id === except) continue;
+    if (id === except || skip.includes(id)) continue;
     const p = await page.evaluate(`window.__cell.screenPointOf(${JSON.stringify(id)})`);
     if (p) return { id, ...p };
   }
@@ -454,6 +457,7 @@ const emissiveOf = (page) => page.evaluate(`(() => {
   return out;
 })()`);
 const maxDelta = (now, before, ids) => Math.max(...ids.flatMap((id) => now[id].map((v, i) => v - before[id][i])));
+const worst = (now, before, ids) => ids.flatMap((id) => now[id].map((v, i) => [id, i, v - before[id][i]])).sort((a, b) => b[2] - a[2])[0].join('/');
 
 test('工具列：蓋子還沒完全打開之前三顆按鈕都停用，打開後才啟用', async () => {
   const page = await open();
@@ -550,8 +554,9 @@ test('測驗：進入時的畫面、先開名稱與拆解會被關閉、在測�
     await page.mouseMove(some.x, some.y);
     await page.waitFor("document.getElementById('stage').style.cursor === 'pointer'");
     assert.equal(await visible(page, '#hover-name'), false, '測驗中滑過不顯示名稱');
-    await sleep(3500);
-    assert.equal(await page.evaluate('window.__cell.autoRotating()'), false, '測驗中不自轉');
+    // 滑鼠移動算操作；之後完全不操作，等超過閒置門檻再加 0.8 秒的餘裕，測驗階段仍不可自轉
+    await sleep(IDLE_MS + 800);
+    assert.equal(await page.evaluate('window.__cell.autoRotating()'), false, '測驗中閒置超過門檻仍不自轉');
     // 直接送出 select 不會洩漏：狀態不變
     await page.evaluate("window.__cell.store.dispatch({ type: 'select', id: 'nucleus', inst: null })");
     assert.equal(await page.evaluate('window.__cell.store.getState().selected'), null);
@@ -609,7 +614,8 @@ test('測驗：十題流程、揭曉發亮、空白與揭曉中的點擊不算�
       const mine = await page.evaluate(`window.__cell.screenPointOf(${JSON.stringify(id)})`);
       // 第 1 題一律故意點錯（要驗證答錯的揭曉）；之後能點到答案就點答案，點不到就點別的
       const wrong = i === 0 || !mine;
-      const target = wrong ? await visibleOther(page, id) : { id, ...mine };
+      // 第 1 題要驗證發亮：錯點目標不選外殼（外殼未殘影時，滑鼠停在上面會有 hover 發亮，污染「其他構造不發亮」的斷言）
+      const target = wrong ? await visibleOther(page, id, i === 0 ? SHELLS : []) : { id, ...mine };
       const before = i === 0 ? await emissiveOf(page) : null;
       await page.click(target.x, target.y);
       await page.waitFor("document.getElementById('quiz-result').textContent !== ''", 3000);
@@ -624,12 +630,13 @@ test('測驗：十題流程、揭曉發亮、空白與揭曉中的點擊不算�
       assert.deepEqual(await page.evaluate('window.__cell.store.getState().quiz.reveal'), { id, correct: !wrong });
       assert.equal(await page.evaluate('window.__cell.quizCurrentId()'), id, '揭曉期間畫面上仍是這一題');
       if (i === 0) {
-        await page.waitFor(`(() => { const e = window.__cell.index.byId.get(${JSON.stringify(id)}); return e.meshes.some((m) => m.material.emissiveIntensity > ${Math.max(...before[id])} + 0.15); })()`, 2000);
+        await page.mouseMove(blank.x, blank.y); // 被點的構造即使變暗，滑鼠停在上面仍會有 hover 發亮；移到空白處再量
+        await page.waitFor(`(() => { const e = window.__cell.index.byId.get(${JSON.stringify(id)}); const b = ${JSON.stringify(before[id])}; return e.meshes.some((m, i) => m.material.emissiveIntensity > b[i] + 0.15); })()`, 2000);
         await sleep(250);
         const now = await emissiveOf(page);
         const others = Object.keys(now).filter((k) => k !== id);
         assert.ok(maxDelta(now, before, [id]) > 0.15, '正確的構造自發光明顯增加');
-        assert.ok(maxDelta(now, before, others) < 0.05, '其他構造不發亮');
+        assert.ok(maxDelta(now, before, others) < 0.05, `其他構造不發亮：${worst(now, before, others)} 答案 ${id} 錯點 ${target.id}`);
         assert.equal(await textOf(page, '#quiz-result'), result, '截圖時仍在揭曉期間');
         await page.screenshot('assets/preview/web-quiz-wrong.png');
         assert.equal(await textOf(page, '#quiz-result'), result, '截圖完成時仍在揭曉期間');
@@ -677,6 +684,169 @@ test('測驗：十題流程、揭曉發亮、空白與揭曉中的點擊不算�
     assert.equal(await page.evaluate("[...document.querySelectorAll('#list .label')].every((e) => e.getClientRects().length > 0)"), true, '清單名稱恢復');
     await page.waitFor("getComputedStyle(document.getElementById('list-wrap')).visibility === 'visible'");
     assert.equal(await page.evaluate('window.__cell.store.getState().selected'), null);
+    assertClean(page);
+  } finally {
+    await page.close();
+  }
+});
+
+// ---- 測驗補強：揭曉的發亮規則（13 種答案）、離開測驗、再玩一次、外殼類答案 ----
+// 所有網格的材質快照（發亮、不透明度、透明旗標、顏色）
+const MESH_SNAP = `(() => {
+  const out = {};
+  for (const [id, e] of window.__cell.index.byId) out[id] = e.meshes.map((m) => ({ ei: m.material.emissiveIntensity, op: m.material.opacity, tr: m.material.transparent, c: m.material.color.getHex() }));
+  return out;
+})()`;
+const meshSnap = (page) => page.evaluate(MESH_SNAP);
+const maxEi = (now, before, ids) => Math.max(...ids.flatMap((id) => now[id].map((m, i) => m.ei - before[id][i].ei)));
+const sameSnap = (a, b) => Object.keys(a).every((id) => a[id].every((m, i) => Math.abs(m.ei - b[id][i].ei) < 1e-6 && Math.abs(m.op - b[id][i].op) < 1e-6 && m.tr === b[id][i].tr && m.c === b[id][i].c));
+const startQuiz = async (page) => {
+  await clickSel(page, '#btn-quiz');
+  await page.waitFor("window.__cell.store.getState().phase === 'quiz'");
+};
+// 任意作答一題（點畫面上看得到的任一構造），回傳 reveal 出現後的結果文字
+const answerAny = async (page) => {
+  const t = await visibleOther(page, null);
+  await page.click(t.x, t.y);
+  await page.waitFor("document.getElementById('quiz-result').textContent !== ''", 3000);
+  return textOf(page, '#quiz-result');
+};
+
+test('測驗揭曉的發亮規則：13 種答案各驗證一次（正確的構造發亮、其他不發亮、非外殼答案時外殼變殘影、外殼答案時外殼不變殘影）', async () => {
+  const page = await boot();
+  try {
+    await sleep(300);
+    await startQuiz(page);
+    await settleCamera(page);
+    const blank = await blankPoint(page);
+    await page.mouseMove(blank.x, blank.y); // 滑鼠停在空白處，沒有滑過發亮
+    await sleep(500);
+    const base = await meshSnap(page);
+    for (const id of QUIZ_IDS) {
+      await page.evaluate(`window.__cell.store.dispatch({ type: 'quizReveal', id: ${JSON.stringify(id)}, correct: false })`);
+      await page.waitFor(`(() => { const e = window.__cell.index.byId.get(${JSON.stringify(id)}); const b = ${JSON.stringify(base[id].map((m) => m.ei))}; return e.meshes.some((m, i) => m.material.emissiveIntensity > 0.15 + b[i]); })()`, 3000);
+      await sleep(500); // 等漸變收斂
+      const now = await meshSnap(page);
+      const others = Object.keys(now).filter((k) => k !== id);
+      assert.ok(maxEi(now, base, [id]) > 0.15, `${id}：正確的構造應發亮`);
+      assert.ok(maxEi(now, base, others) < 0.05, `${id}：其他構造不應發亮`);
+      const nonShell = QUIZ_IDS.find((k) => k !== id && !SHELLS.includes(k));
+      assert.ok(now[nonShell].some((m, i) => m.c !== base[nonShell][i].c), `${id}：其餘非外殼構造（${nonShell}）應變暗`);
+      if (SHELLS.includes(id)) {
+        assert.ok(now[id].every((m, i) => m.tr === base[id][i].tr && Math.abs(m.op - base[id][i].op) < 1e-6), `${id}：答案是外殼時，答案本身不是殘影`);
+      } else {
+        for (const sh of SHELLS) assert.ok(now[sh].some((m) => m.tr && m.op <= 0.16), `${id}：答案不是外殼時，${sh} 應是殘影`);
+      }
+      await page.evaluate("window.__cell.store.dispatch({ type: 'quizNext' })");
+      let back = false;
+      for (let k = 0; k < 40 && !back; k++) { await sleep(100); back = sameSnap(await meshSnap(page), base); }
+      assert.ok(back, `${id}：揭曉結束後材質回到揭曉前`);
+    }
+    assertClean(page);
+  } finally {
+    await page.close();
+  }
+});
+
+for (const way of ['#quiz-exit', '#btn-quiz']) {
+  test(`測驗：揭曉進行中按 ${way} 離開，計時器被清掉、之後狀態不變、發亮還原`, async () => {
+    const page = await boot();
+    try {
+      await sleep(300);
+      const loaded = await meshSnap(page);
+      await startQuiz(page);
+      await settleCamera(page);
+      await answerAny(page);
+      assert.notEqual(await page.evaluate('window.__cell.store.getState().quiz.reveal'), null, '揭曉進行中');
+      await clickSel(page, way);
+      await page.waitFor("window.__cell.store.getState().phase === 'explore'", 2000);
+      const check = async (msg) => {
+        assert.equal(await page.evaluate('window.__cell.store.getState().phase'), 'explore', `${msg}：phase`);
+        assert.equal(await page.evaluate('window.__cell.store.getState().quiz'), null, `${msg}：quiz`);
+        assert.equal(await visible(page, '#quiz'), false, `${msg}：#quiz 不可見`);
+      };
+      await check('剛離開');
+      await sleep(REVEAL_MS + 800);
+      await check('揭曉時間過後');
+      await page.waitFor("getComputedStyle(document.getElementById('list-wrap')).visibility === 'visible'");
+      assert.equal(await page.evaluate('window.__cell.quizCurrentId()'), null);
+      assert.ok(sameSnap(await meshSnap(page), loaded), '所有網格的發亮與外觀回到載入時');
+      assertClean(page);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+test('測驗：總結後按 #quiz-retry 立刻作答第 1 題流程正常；最後一題揭曉中離開不出錯', async () => {
+  const page = await boot();
+  try {
+    await sleep(300);
+    await startQuiz(page);
+    await settleCamera(page);
+    for (let i = 0; i < 10; i++) {
+      await answerAny(page);
+      if (i < 9) await page.waitFor(`document.getElementById('quiz-progress').textContent === '第 ${i + 2} 題／共 10 題'`, 4000);
+    }
+    await page.waitFor("!document.getElementById('quiz-summary').hidden", 4000);
+    await clickSel(page, '#quiz-retry');
+    assert.equal(await progressText(page), '第 1 題／共 10 題');
+    const r = await answerAny(page); // 按下再玩一次後立刻作答
+    assert.ok(r === '答對了！' || r.startsWith('答錯了'), r);
+    assert.notEqual(await page.evaluate('window.__cell.store.getState().quiz.reveal'), null, '作答後有揭曉');
+    await page.waitFor("document.getElementById('quiz-progress').textContent === '第 2 題／共 10 題'", 4000);
+    for (let i = 1; i < 9; i++) {
+      await answerAny(page);
+      await page.waitFor(`document.getElementById('quiz-progress').textContent === '第 ${i + 2} 題／共 10 題'`, 4000);
+    }
+    await answerAny(page); // 第 10 題，揭曉進行中離開
+    assert.equal(await progressText(page), '第 10 題／共 10 題');
+    await clickSel(page, '#quiz-exit');
+    await page.waitFor("window.__cell.store.getState().phase === 'explore'", 2000);
+    await sleep(REVEAL_MS + 800);
+    assert.equal(await page.evaluate('window.__cell.store.getState().quiz'), null);
+    assert.equal(await visible(page, '#quiz'), false, '離開後總結不會冒出來');
+    assertClean(page);
+  } finally {
+    await page.close();
+  }
+});
+
+test('測驗：答案是外殼類（細胞壁、細胞膜）時，揭曉不變殘影、發亮，其餘構造變暗', async () => {
+  const page = await boot();
+  try {
+    await sleep(300);
+    // 一直重開測驗直到第 1 題是外殼類（每輪 2/13；上限 300 次，沒遇到就讓測試失敗）
+    let id = null;
+    for (let tries = 0; tries < 300 && !SHELLS.includes(id); tries++) {
+      await startQuiz(page);
+      id = await quizId(page);
+      if (!SHELLS.includes(id)) {
+        await clickSel(page, '#btn-quiz');
+        await page.waitFor("window.__cell.store.getState().phase === 'explore'");
+      }
+    }
+    assert.ok(SHELLS.includes(id), `300 次內沒有遇到外殼類題目（最後一題：${id}）`);
+    await settleCamera(page);
+    const blank = await blankPoint(page);
+    await page.mouseMove(blank.x, blank.y);
+    await sleep(500);
+    const base = await meshSnap(page);
+    const wrongTarget = await visibleOther(page, id, SHELLS);
+    await page.click(wrongTarget.x, wrongTarget.y);
+    await page.waitFor("document.getElementById('quiz-result').textContent !== ''", 3000);
+    assert.equal(await textOf(page, '#quiz-result'), `答錯了，你點的是${zh(wrongTarget.id)}。發亮的才是${zh(id)}。`);
+    await page.mouseMove(blank.x, blank.y); // 滑鼠移到空白處，避免被點構造的 hover 發亮污染量測
+    await page.waitFor(`(() => { const e = window.__cell.index.byId.get(${JSON.stringify(id)}); const b = ${JSON.stringify(base[id].map((m) => m.ei))}; return e.meshes.some((m, i) => m.material.emissiveIntensity > 0.15 + b[i]); })()`, 2000);
+    await sleep(250);
+    const now = await meshSnap(page);
+    assert.equal(await textOf(page, '#quiz-result') !== '', true, '仍在揭曉期間');
+    assert.ok(now[id].every((m, i) => m.tr === base[id][i].tr && Math.abs(m.op - base[id][i].op) < 1e-6), `${id} 不是殘影（透明旗標與不透明度與揭曉前相同）`);
+    assert.ok(maxEi(now, base, [id]) > 0.15, `${id} 自發光比揭曉前高`);
+    const others = Object.keys(now).filter((k) => k !== id);
+    assert.ok(maxEi(now, base, others) < 0.05, '其他構造不發亮');
+    const dimmed = QUIZ_IDS.filter((k) => !SHELLS.includes(k) && now[k].some((m, i) => m.c !== base[k][i].c));
+    assert.ok(dimmed.length >= 8, `非外殼構造應變暗，實際只有 ${dimmed.length} 個`);
     assertClean(page);
   } finally {
     await page.close();
