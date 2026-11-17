@@ -256,7 +256,7 @@ def _emit(oid, p, R, radius, pieces):
     world = {k: (W + shift, F) for k, (W, F) in world.items()}
     far = float(np.max(np.linalg.norm(allv - p, axis=1)))
     if far > radius + 1e-6:
-        raise ValueError(f"{oid}：幾何超出碰撞半徑（{far:.4f} > {radius}）")
+        raise C.PlacementError(f"{oid}：幾何超出碰撞半徑（{far:.4f} > {radius}）")
     root = C.new_instance(oid, tuple(float(x) for x in p))
     order = ["main", "cut"] + [k for k in world if k not in ("main", "cut")]
     for part in order:
