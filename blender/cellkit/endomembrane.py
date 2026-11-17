@@ -13,6 +13,7 @@ import random
 
 import bmesh
 import bpy
+import mathutils.kdtree
 import numpy as np
 
 from . import common as C
@@ -327,7 +328,8 @@ class _Layer:
         return np.interp(np.mod(ph, TWO_PI), self.phi_tab, self.tab)
 
     def radius(self, th, ph):
-        env = 0.35 + 0.65 * np.clip(th / 1.2, 0, 1)
+        # 極點（th=0）處皺褶振幅要連續地降到 0，否則半徑會隨方位角跳動而在中心捏出尖點
+        env = (0.35 + 0.65 * np.clip(th / 1.2, 0, 1)) * (1.0 - np.exp(-((th / 0.3) ** 2)))
         common = (
             0.6 * np.sin(4 * ph + 2.6 * th + 0.7 * np.sin(2 * ph + 0.5))
             + 0.4 * np.sin(7 * ph - 2.0 * th + 1.1)
@@ -436,7 +438,12 @@ def _hole_cutter(holes):
 
 
 def _cut_holes(solid, holes):
-    body = _make_obj("rer_tmp_body", *solid)
+    # 皺褶使四邊形不共面；先切成三角形再布林，否則精確布林在孔緣會留下背對背的零面積重複面
+    sv, sf = solid
+    tri = []
+    for q in sf:
+        tri += [[q[0], q[1], q[2]], [q[0], q[2], q[3]]] if len(q) == 4 else [q]
+    body = _make_obj("rer_tmp_body", sv, tri)
     cutter = _make_obj("rer_tmp_cutter", *_hole_cutter(holes))
     mod = body.modifiers.new("cut", "BOOLEAN")
     mod.operation = "DIFFERENCE"
@@ -445,6 +452,20 @@ def _cut_holes(solid, holes):
     co, faces = _evaluated(body)
     _drop(body)
     _drop(cutter)
+    # 布林在切刀棱線恰好擦過薄片格點時，會產生相距不到 1e-4 量級的頂點與由它們組成的零面積三角形；
+    # 把這些近乎重合的頂點焊起來（連同塌縮的面一起消掉），之後仍由 _mesh_integrity 逐項驗證。
+    bm = bmesh.new()
+    for p in co:
+        bm.verts.new(p)
+    bm.verts.ensure_lookup_table()
+    for q in faces:
+        bm.faces.new([bm.verts[i] for i in q])
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1.5e-4)
+    bm.verts.ensure_lookup_table()
+    bm.verts.index_update()
+    co = np.array([v.co[:] for v in bm.verts])
+    faces = [[v.index for v in f.verts] for f in bm.faces]
+    bm.free()
     return co, faces
 
 
@@ -948,21 +969,61 @@ def _microfilaments(ctx, rng):
 # ----------------------------------------------------------------------------
 # 主流程
 # ----------------------------------------------------------------------------
-def _nonmanifold_edges(co, faces, tol):
-    """頂點以 tol 焊接後，面數不等於 2 的邊的條數（封閉流形應為 0）。"""
-    bm = bmesh.new()
-    for p in co:
-        bm.verts.new(p)
-    bm.verts.ensure_lookup_table()
-    for q in faces:
-        try:
-            bm.faces.new([bm.verts[i] for i in q])
-        except ValueError:
-            pass  # 重複面
-    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=tol)
-    n = sum(1 for e in bm.edges if len(e.link_faces) != 2)
-    bm.free()
-    return n
+
+
+def _mesh_integrity(obj, tol=1e-5):
+    """對最終要匯出的網格（頂點與面陣列）直接檢查：頂點以 tol 焊接後，
+    1) 每條邊的共用面數必須是 2；2) 不得有完全重合的三角形；3) 相鄰面繞向一致且與朝外的角法向一致。
+    不經 bmesh.faces.new，所以重複面不會被吞掉。回傳 (非流形邊數, 重複三角形組數, 反向面數)。"""
+    me = obj.data
+    co = np.empty(len(me.vertices) * 3)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+    me.calc_loop_triangles()
+    tri = np.empty(len(me.loop_triangles) * 3, dtype=np.int64)
+    me.loop_triangles.foreach_get("vertices", tri)
+    tri = tri.reshape(-1, 3)
+    kd = mathutils.kdtree.KDTree(len(co))
+    for i, p in enumerate(co):
+        kd.insert(p, i)
+    kd.balance()
+    wid = np.arange(len(co))
+    for i, p in enumerate(co):
+        for _p, j, _d in kd.find_range(p, tol):
+            if wid[j] < wid[i]:
+                wid[i] = wid[j]
+    for _ in range(3):  # 傳遞閉包
+        wid = wid[wid]
+    w = wid[tri]
+    keep = (w[:, 0] != w[:, 1]) & (w[:, 1] != w[:, 2]) & (w[:, 0] != w[:, 2])
+    collapsed = int(np.sum(~keep))  # 焊接後塌縮成線或點的三角形（零面積）
+    w = w[keep]
+    e = np.sort(np.concatenate([w[:, [0, 1]], w[:, [1, 2]], w[:, [2, 0]]]), axis=1)
+    _u, cnt = np.unique(e, axis=0, return_counts=True)
+    bad_edges = int(np.sum(cnt != 2))
+    de = np.concatenate([w[:, [0, 1]], w[:, [1, 2]], w[:, [2, 0]]])
+    _u, inv = np.unique(np.sort(de, axis=1), axis=0, return_inverse=True)
+    sign = np.where(de[:, 0] < de[:, 1], 1, -1)
+    wind_bad = int(np.sum(np.bincount(inv.ravel(), weights=sign) != 0))  # 同一條邊兩側的繞向必須相反
+    t = np.sort(w, axis=1)
+    _u, tc = np.unique(t, axis=0, return_counts=True)
+    dups = int(np.sum(tc > 1)) + collapsed
+    nloop = len(me.loops)
+    cn = np.empty(nloop * 3)
+    me.corner_normals.foreach_get("vector", cn)
+    cn = cn.reshape(-1, 3)
+    pn = np.empty(len(me.polygons) * 3)
+    me.polygons.foreach_get("normal", pn)
+    pn = pn.reshape(-1, 3)
+    ls = np.empty(len(me.polygons), dtype=np.int64)
+    lt = np.empty(len(me.polygons), dtype=np.int64)
+    me.polygons.foreach_get("loop_start", ls)
+    me.polygons.foreach_get("loop_total", lt)
+    flipped = 0
+    for s, n_, p in zip(ls, lt, pn):
+        if float(cn[s : s + n_].mean(axis=0) @ p) < 0:
+            flipped += 1
+    return bad_edges, dups, flipped + wind_bad
 
 
 def _check(name, co, ok_mask_fn, what):
@@ -1008,9 +1069,11 @@ def build(ctx):
     dots = _unit_rows(rer_co - NC) @ ax
     if dots.min() <= C.RER["min_dot"]:
         raise ValueError(f"粗糙內質網有頂點方向與軸的內積 {dots.min():.4f} <= {C.RER['min_dot']}（超出半邊範圍）")
-    nm = _nonmanifold_edges(rer_co, rer_faces, 1e-5)
-    if nm:
-        raise ValueError(f"粗糙內質網（焊接容差 1e-5）有 {nm} 條非流形邊，孔洞沒有乾淨切穿")
+    bad_e, dup_t, flip_f = _mesh_integrity(rer_obj, 1e-5)
+    if bad_e or dup_t or flip_f:
+        raise ValueError(
+            f"粗糙內質網（焊接容差 1e-5）有 {bad_e} 條非流形邊、{dup_t} 組重複三角形、{flip_f} 個反向面"
+        )
     rer_dot_min = float(dots.min())
     # 孔洞要真的切穿：孔洞中心附近不得有該層的任何頂點
     for k, hs in holes.items():
@@ -1153,7 +1216,7 @@ def build(ctx):
 
     total = sum(report.values())
     print(f"[endomembrane] 三角面 {total}：{report}")
-    print(f"[endomembrane] 非流形邊 0；附著核糖體 {rib_n} 顆、距核最小 {rib_min:.3f}；粗糙內質網最小內積 {rer_dot_min:.4f}；平滑內質網一般管距核最大 {ser_max_main:.3f}")
+    print(f"[endomembrane] 非流形邊 0、重複三角形 0、反向面 0；附著核糖體 {rib_n} 顆、距核最小 {rib_min:.3f}；粗糙內質網最小內積 {rer_dot_min:.4f}；平滑內質網一般管距核最大 {ser_max_main:.3f}")
     print(
         f"[endomembrane] 自檢：粗糙內質網距核心 {rer_range[0]:.3f}~{rer_range[1]:.3f}；"
         f"平滑內質網距核心 {ser_range[0]:.3f}~{ser_range[1]:.3f}；高基氏體最大半徑 {gol_max}；"
