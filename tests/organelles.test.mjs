@@ -89,9 +89,35 @@ test('所有文字（含 INTRO）不含禁用詞', () => {
   }
 });
 
-test('vacuole 的 body 或 fact 含「比例」', () => {
+test('FORBIDDEN_WORDS 恰好有 8 個詞', () => {
+  assert.equal(FORBIDDEN_WORDS.length, 8);
+});
+
+const REJECTED_TERMS = [
+  '基因組', '信使', '驅動蛋白', '細胞質動力蛋白', '連合小管',
+  '未折疊', '折疊', '訊號序列', '小泡', '反面',
+];
+
+test('不採用的譯名不出現在任何文字，「前期帶」只以「早前期帶」出現', () => {
+  const texts = [];
+  for (const o of ORGANELLES) {
+    texts.push([`${o.id}.zh`, o.zh], [`${o.id}.tagline`, o.tagline],
+      [`${o.id}.body`, o.body], [`${o.id}.fact`, o.fact ?? '']);
+  }
+  texts.push(['INTRO.title', INTRO.title], ['INTRO.start', INTRO.start]);
+  INTRO.paragraphs.forEach((p, i) => texts.push([`INTRO.paragraphs[${i}]`, p]));
+  for (const [where, t] of texts) {
+    for (const w of REJECTED_TERMS) {
+      assert.ok(!t.includes(w), `${where} 含不採用的譯名「${w}」：${t}`);
+    }
+    assert.ok(!t.replaceAll('早前期帶', '').includes('前期帶'), `${where} 的「前期帶」未寫成「早前期帶」：${t}`);
+  }
+});
+
+test('vacuole 的 body 或 fact 含「比例」，body 另含「縮小」', () => {
   const v = getOrganelle('vacuole');
   assert.ok(v.body.includes('比例') || (v.fact ?? '').includes('比例'), 'vacuole 缺「比例」');
+  assert.ok(v.body.includes('縮小'), 'vacuole body 缺「縮小」');
 });
 
 test('INTRO 涵蓋必要詞且總長不超過 260', () => {
@@ -100,6 +126,9 @@ test('INTRO 涵蓋必要詞且總長不超過 260', () => {
   assert.ok(Array.isArray(INTRO.paragraphs));
   assert.ok(INTRO.paragraphs.length >= 2 && INTRO.paragraphs.length <= 3,
     `INTRO 段數 ${INTRO.paragraphs.length}`);
+  INTRO.paragraphs.forEach((p, i) => {
+    assert.ok(typeof p === 'string' && p.length > 0, `INTRO.paragraphs[${i}] 不是非空字串`);
+  });
   const all = INTRO.paragraphs.join('');
   for (const w of ['葉肉細胞', '中膠層', '原生質絲', '液泡', '比例']) {
     assert.ok(all.includes(w), `INTRO 缺「${w}」`);
