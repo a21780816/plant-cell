@@ -1,0 +1,17 @@
+{
+  "cell_wall":     { "main": "#86B94A", "cut": "#B5D97A" },
+  "cell_membrane": { "main": "#F0C75E", "cut": "#F7DE96" },
+  "cytoplasm":     { "main": "#D8F0C2" },
+  "nucleus":       { "main": "#8D6CC9", "cut": "#C9B3EC", "pore": "#5E4A9A", "chromatin": "#6B4FB0" },
+  "nucleolus":     { "main": "#54348F" },
+  "rough_er":      { "main": "#4D7FD6" },
+  "smooth_er":     { "main": "#3FB7C4" },
+  "ribosome":      { "main": "#2C2A5A" },
+  "golgi":         { "main": "#F29E4C", "vesicle": "#F7C27E" },
+  "mitochondrion": { "main": "#E2553D", "cut": "#F4A58C", "cristae": "#C43C2A" },
+  "chloroplast":   { "main": "#3E9B3E", "cut": "#9BD36A", "grana": "#1F6B2E" },
+  "vacuole":       { "main": "#9FD8F2" },
+  "peroxisome":    { "main": "#E86FA0", "cut": "#F6B5CC", "core": "#B23A6E" },
+  "plasmodesmata": { "main": "#2E8B6F" },
+  "cytoskeleton":  { "main": "#D9D4F0", "filament": "#F2C6D8" }
+}

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+assets/*.glb
+assets/parts/
+assets/preview/
+.chrome-profile/
+.superpowers/
