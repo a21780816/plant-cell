@@ -6,6 +6,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["scripts/build.mjs", "--watch", "--serve"],
       "port": 5173
+    },
+    {
+      "name": "cell-serve",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/build.mjs", "--serve"],
+      "port": 5173
     }
   ]
 }
