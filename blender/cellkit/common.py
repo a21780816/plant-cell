@@ -73,7 +73,7 @@ GOLGI = {"centers": [(-0.3, -2.2, 0.2), (-3.3, -2.1, -1.5)], "zone_radius": 0.75
 REP_POS = {
     "chloroplast": (-1.2, -2.4, 1.7),
     "mitochondrion": (0.9, -2.5, -0.7),
-    "peroxisome": (0.5, -2.6, 1.6),
+    "peroxisome": (1.1, -2.6, 1.8),
 }
 OIL_BODY_REP = (3.9, -2.0, -0.9)
 OIL_BODY_KEEPOUT = 0.22
@@ -87,6 +87,16 @@ STRAND_END_LEVEL = 1.10
 STRAND_R = 0.16  # 細胞質絲的管半徑（版面驗算與 is_free 用）
 CAMERA_DIR = (0.62, -0.62, 0.48)
 SEED = 20261117
+
+# 從預設鏡頭必須看得到的構造：(球心, 半徑)。其他個體不可落在它們朝鏡頭方向的視線走廊內
+SHOWCASE = {
+    "nucleus": (NUCLEUS["center"], NUCLEUS["radius"]),
+    "chloroplast": (REP_POS["chloroplast"], 0.62),
+    "mitochondrion": (REP_POS["mitochondrion"], 0.48),
+    "peroxisome": (REP_POS["peroxisome"], 0.25),
+    "golgi": (GOLGI["centers"][0], 0.70),
+    "oil_body": (OIL_BODY_REP, OIL_BODY_KEEPOUT),
+}
 
 # validate_layout 用：代表個體的標稱清空半徑（只用於版面驗算，不限制各模組實際尺寸）
 REP_CLEARANCE = {"chloroplast": 0.70, "mitochondrion": 0.60, "peroxisome": 0.45}
@@ -223,6 +233,18 @@ def _sector_sdf(P, apex, axis, min_dot, radius):
     return float(out[0]) if single else out
 
 
+def _corridor_hit(center, radius, shape_center, shape_radius):
+    """center 是否落在 shape 朝 CAMERA_DIR 的視線走廊內（t > 0 且垂直分量 < 兩半徑之和）。"""
+    d = _unit(CAMERA_DIR)
+    v = _np(center) - _np(shape_center)
+    t = float(v @ d)
+    return t > 0.0 and float(np.linalg.norm(v - t * d)) < shape_radius + radius
+
+
+def _in_view_corridor(c, radius):
+    return any(_corridor_hit(c, radius, sc, sr) for sc, sr in SHOWCASE.values())
+
+
 class PlacementError(RuntimeError):
     pass
 
@@ -235,8 +257,10 @@ class Ctx:
         self.rng = random.Random(seed)
         self.reserved = []  # (name, (x, y, z), radius)
 
-    def is_free(self, center, radius):
+    def is_free(self, center, radius, respect_view=True):
         c = _np(center)
+        if respect_view and _in_view_corridor(c, radius):
+            return False
         if cavity_sdf(c) > -radius:
             return False
         v = VACUOLE
@@ -266,7 +290,7 @@ class Ctx:
         return True
 
     def reserve(self, name, center, radius):
-        if not self.is_free(center, radius):
+        if not self.is_free(center, radius, respect_view=False):
             raise ValueError(f"無法保留 {name}：中心 {tuple(center)}、半徑 {radius} 不在可用空間內")
         self.reserved.append((name, tuple(float(x) for x in center), float(radius)))
 
@@ -276,7 +300,7 @@ class Ctx:
         hi = list(CAVITY_HALF)
         for _ in range(tries):
             p = (rng.uniform(lo[0], hi[0]), rng.uniform(lo[1], hi[1]), rng.uniform(lo[2], hi[2]))
-            if not self.is_free(p, radius):
+            if not self.is_free(p, radius, respect_view=True):
                 continue
             if in_cut(p) != bool(want_cut):
                 continue
@@ -407,6 +431,12 @@ def validate_layout():
             d = _seg_seg_dist(segs[i][0], segs[i][1], segs[j][0], segs[j][1])
             if d < 0.4:
                 raise ValueError(f"版面不合：細胞質絲 {i} 與 {j} 的中心線距離 {d:.3f} 小於 0.4")
+
+    # 2c. SHOWCASE 的構造彼此不可落在對方的視線走廊內
+    for a, (ca, ra) in SHOWCASE.items():
+        for b, (cb, rb) in SHOWCASE.items():
+            if a != b and _corridor_hit(ca, ra, cb, rb):
+                raise ValueError(f"版面不合：{a} 落在 {b} 的視線走廊內")
 
     # 3. 粗糙內質網與平滑內質網的扇形區不重疊（半角之和 <= 兩軸夾角）
     cos_between = float(_unit(RER["axis"]) @ _unit(SER["axis"]))

@@ -106,6 +106,46 @@ def _aim(obj, direction):
     obj.rotation_euler = Vector(direction).to_track_quat("-Z", "Y").to_euler()
 
 
+def _scene_points():
+    """場景所有網格的頂點，加上細胞外殼的標稱範圍（六角柱加伸出的相鄰壁的外緣點），回傳 (N, 3)。
+    標稱範圍讓 --only 只建少數胞器時，鏡頭仍以整個細胞的大小為準。"""
+    reach = C.FLANGE_LEN + 0.4
+    zh = C.HEX_HALF_Z + 0.34
+    pts = []
+    for (x, y), (dx, dy) in zip(C.hex_vertices(), C.flange_dirs()):
+        for r in (0.0, reach):
+            for z in (-zh, zh):
+                pts.append((x + dx * r, y + dy * r, z))
+    pts = [np.array(pts)]
+    for o in bpy.data.objects:
+        if o.type != "MESH" or not len(o.data.vertices):
+            continue
+        co = np.empty(len(o.data.vertices) * 3)
+        o.data.vertices.foreach_get("co", co)
+        m = np.array(o.matrix_world)
+        pts.append(co.reshape(-1, 3) @ m[:3, :3].T + m[:3, 3])
+    return np.vstack(pts)
+
+
+def _fit_distance(corners, dirs, lens, aspect, margin=1.06, sensor=36.0):
+    """各視角（看向原點）都能完整容納 corners 所需的最小鏡頭距離（含 margin 倍的空白）。"""
+    tan_h = (sensor / 2) / lens  # 感測器以寬度為準
+    tan_v = tan_h * aspect
+    need = 0.0
+    for d in dirs:
+        d = np.array(Vector(d).normalized())
+        right = np.cross(d, [0.0, 0.0, 1.0])
+        right /= np.linalg.norm(right)
+        up = np.cross(right, d)
+        depth_off = corners @ d  # 鏡頭深度 = dist - depth_off
+        need = max(
+            need,
+            float(np.max(depth_off + np.abs(corners @ right) * margin / tan_h)),
+            float(np.max(depth_off + np.abs(corners @ up) * margin / tan_v)),
+        )
+    return need
+
+
 def render_preview(path):
     scene = bpy.context.scene
     scene.render.engine = "BLENDER_EEVEE"
@@ -145,7 +185,8 @@ def render_preview(path):
     }
     views = [("base", True), ("base", False), ("top", True), ("back", True)]
     lid_objs = _lid_objects()
-    dist = 25.0
+    dist = _fit_distance(_scene_points(), [dirs[n] for n, _ in views], cam_data.lens, VIEW_H / VIEW_W)
+    print(f"[preview] 鏡頭距離 {dist:.2f}")
     tmpdir = tempfile.mkdtemp(prefix="cellprev_")
     tiles = []
     for i, (dname, lid_hidden) in enumerate(views):
