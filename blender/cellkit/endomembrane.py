@@ -1,4 +1,4 @@
-"""內質網、核糖體、高基氏體、細胞骨架。
+"""內質網、核糖體、高基氏體、油體、皮層微管與肌動蛋白微絲。
 
 作法：
 - 粗糙內質網：4 層沿細胞核球面彎曲的皺褶薄片（極座標網格、封閉有厚度的實體，邊緣是波浪狀圓邊），
@@ -6,7 +6,9 @@
 - 核糖體：低面數小球，貼在薄片表面（隨機泊松分布）；游離的 14 群各約 10 顆。
 - 平滑內質網：把管網骨架交給 Skin 修改器 + 細分曲面，三叉接點自然融合成平順的管子。
 - 高基氏體：6 片彎成弓形的扁囊（中間薄、邊緣鼓）巢狀疊起，旁邊散著出芽的小泡。
-- 細胞骨架：沿細胞膜內側走的微管與伸向細胞核附近的微絲，以平行傳輸框架掃出的細管。
+- 油體：5 顆光滑的球，第 0 顆（代表）在固定位置，其餘 4 顆取自空間內的隨機位置。
+- 皮層微管：貼著六角柱空腔的內壁（距膜 0.15 到 0.35），10 條沿長軸、6 條環向（繞過稜線時順著圓角轉彎）。
+- 肌動蛋白微絲：從皮層伸向細胞核附近、略彎。兩者都以平行傳輸框架掃出的細管。
 """
 import math
 import random
@@ -316,7 +318,7 @@ class _Layer:
         ok = np.ones(PH.shape, dtype=bool)
         for off in (-0.075, 0.075):
             p = NC + (self.r0 + off) * _dir(TH, PH)
-            ok &= C.rbox_sdf(p, C.CAVITY_HALF, C.CAVITY_R) <= -0.12
+            ok &= C.cavity_sdf(p) <= -0.12
             ok &= _outside_vacuole(p, 0.06)
         good = np.cumprod(ok, axis=1).astype(bool)
         first_bad = np.where(good.all(axis=1), len(th), np.argmin(good, axis=1))
@@ -837,34 +839,92 @@ def _golgi_rotation(rep, rng):
     if np.linalg.det(q) < 0:
         q[:, 0] *= -1
     return q
+# ----------------------------------------------------------------------------
+# 油體
+# ----------------------------------------------------------------------------
+OIL_RADII = (0.21, 0.19, 0.17, 0.20, 0.18)  # 第 0 顆是代表個體
+OIL_SPHERE = (22, 15)  # 經度分段、緯度圈數（616 個三角面）
+OIL_CLEAR = 0.22  # 取位置與頂點檢查用的半徑
 
 
 # ----------------------------------------------------------------------------
-# 細胞骨架
+# 皮層微管與肌動蛋白微絲
 # ----------------------------------------------------------------------------
-def _cortex_points(psi, x, depth):
-    """x 處、細胞膜內側 depth 的截面點：由截面中心沿 (cos psi, sin psi) 射線用二分法找到 sdf = -depth。"""
-    psi = np.asarray(psi, dtype=float) + np.zeros_like(np.asarray(x, dtype=float))
-    x = np.asarray(x, dtype=float) + np.zeros_like(psi)
-    depth = np.asarray(depth, dtype=float) + np.zeros_like(psi)
-    lo, hi = np.zeros_like(psi), np.full_like(psi, 5.0)
-    cy, sz = np.cos(psi), np.sin(psi)
-    for _ in range(40):
+MT_R = 0.022
+AF_R = 0.012
+MT_BAND = (0.15, 0.35)  # 微管路徑每一點到細胞膜內表面的距離
+MT_MESH_BAND = (0.10, 0.40)  # 管的頂點（多留管徑的容差）
+RING_FILLET = 0.5  # 環向微管繞過稜線的圓角半徑
+
+
+def _bisect(inside, lo, hi):
+    """inside(lo) 為真、inside(hi) 為假；回傳邊界。"""
+    for _ in range(50):
         mid = (lo + hi) / 2
-        p = np.stack([x, mid * cy, mid * sz], axis=-1)
-        inside = C.rbox_sdf(p, C.CAVITY_HALF, C.CAVITY_R) <= -depth
+        if inside(mid):
+            lo = mid
+        else:
+            hi = mid
+    return lo
+
+
+# 空腔在 z、y 方向的半寬：由 cavity_sdf 實測，不假設空腔的形狀常數
+_HZ = _bisect(lambda t: C.cavity_sdf((0.0, 0.0, t)) <= 0.0, 0.0, 10.0)
+_HY = _bisect(lambda t: C.cavity_sdf((0.0, t, 0.0)) <= 0.0, 0.0, 10.0)
+
+
+def _ray_to_cortex(origin, dirs, depth):
+    """由空腔內一點 origin 沿各方向 dirs (N,3) 射出，二分法找到 -cavity_sdf = depth 處（空腔是凸的，沿射線只有一個交點）。"""
+    origin = np.asarray(origin, dtype=float)
+    dirs = np.asarray(dirs, dtype=float).reshape(-1, 3)
+    depth = np.broadcast_to(np.asarray(depth, dtype=float), (len(dirs),))
+    lo, hi = np.zeros(len(dirs)), np.full(len(dirs), 12.0)
+    for _ in range(45):
+        mid = (lo + hi) / 2
+        inside = C.cavity_sdf(origin + mid[:, None] * dirs) <= -depth
         lo = np.where(inside, mid, lo)
         hi = np.where(inside, hi, mid)
-    return np.stack([x, lo * cy, lo * sz], axis=-1)
+    return origin + lo[:, None] * dirs
 
 
-def _free_run(ctx, pts, rad, min_len):
-    """把折線切成 is_free 的連續段，回傳最長且長度 >= min_len 的一段（沒有就回 None）。"""
-    flags = [ctx.is_free(p, rad) for p in pts]
+def _inset_hex(t):
+    """空腔的六角形（z = 0 截面）各面內縮 t 後的 6 個頂點 (x, y)，逆時針，從 +x 尖端開始。由 cavity_sdf 實測。"""
+    xt = _bisect(lambda x: C.cavity_sdf((x, 0.0, 0.0)) <= -t + 1e-9, 0.0, 12.0)
+    y = _HY - t
+    xs = _bisect(lambda x: C.cavity_sdf((x, y, 0.0)) <= -t + 1e-9, 0.0, 12.0)
+    return np.array([(xt, 0.0), (xs, y), (-xs, y), (-xt, 0.0), (-xs, -y), (xs, -y)])
+
+
+def _rounded_hex(depth, r, arc_step=0.08):
+    """距空腔內壁 depth 的六角形輪廓，六個稜角各以半徑 r 的圓弧倒圓。回傳 (點 (N,2), 外法向 (N,2))，逆時針、首尾不重複。
+    作法：內縮 depth + r 的六角形，各頂點外圍 r 處畫圓弧，直邊自然接上。"""
+    V = _inset_hex(depth + r)
+    E = np.roll(V, -1, axis=0) - V
+    N = np.stack([E[:, 1], -E[:, 0]], axis=1)
+    N /= np.linalg.norm(N, axis=1, keepdims=True)
+    pts, nrm = [], []
+    for k in range(len(V)):
+        a0 = math.atan2(N[k - 1][1], N[k - 1][0])
+        a1 = math.atan2(N[k][1], N[k][0])
+        sweep = (a1 - a0) % TWO_PI
+        m = max(2, int(math.ceil(sweep / arc_step)) + 1)
+        for a in a0 + np.linspace(0.0, sweep, m):
+            u = np.array([math.cos(a), math.sin(a)])
+            pts.append(V[k] + r * u)
+            nrm.append(u)
+    return np.array(pts), np.array(nrm)
+
+
+def _free_run(ctx, pts, rad, min_len, ok=None):
+    """把折線切成「is_free 且 ok」的連續段（細線可以穿過視線走廊，所以 respect_view=False），
+    回傳最長且長度 >= min_len 的一段（沒有就回 None）。"""
+    flags = [
+        (ok is None or bool(ok[i])) and ctx.is_free(p, rad, respect_view=False) for i, p in enumerate(pts)
+    ]
     best, cur = None, []
     runs = []
-    for p, ok in zip(pts, flags):
-        if ok:
+    for p, good in zip(pts, flags):
+        if good:
             cur.append(p)
         else:
             if cur:
@@ -889,44 +949,90 @@ def _resample(path, step):
     return np.stack([np.interp(t, s, path[:, i]) for i in range(3)], axis=1)
 
 
+def _in_band(raw, lo, hi):
+    d = -C.cavity_sdf(raw)
+    return (d >= lo) & (d <= hi)
+
+
+def _long_path(rng, face, c0):
+    """沿長軸（x 方向）貼在 face（top / bottom / front / back）內壁上的折線。c0 是該面上另一個方向的位置。"""
+    x = np.linspace(rng.uniform(-5.8, -3.0), rng.uniform(3.0, 5.8), 100)
+    ph1, ph2 = rng.uniform(0, TWO_PI), rng.uniform(0, TWO_PI)
+    d = rng.uniform(0.18, 0.26) + 0.035 * np.sin(1.3 * x + ph1)  # 距膜深度的緩慢起伏
+    w = c0 + 0.06 * np.sin(0.9 * x + ph2)  # 在面上的側向輕微擺動
+    if face in ("top", "bottom"):
+        sgn = 1.0 if face == "top" else -1.0
+        return np.stack([x, w, sgn * (_HZ - d)], axis=1)
+    sgn = -1.0 if face == "front" else 1.0
+    return np.stack([x, sgn * (_HY - d), w], axis=1)
+
+
+def _ring_path(rng, z0):
+    """繞六角柱周圍的環向弧線：沿倒圓的六角形輪廓走一段，稜線處順著圓角轉彎；高度略微傾斜、起伏。"""
+    d0 = rng.uniform(0.16, 0.20)
+    pts, nrm = _rounded_hex(d0, RING_FILLET)
+    closed = np.vstack([pts, pts[:1]])
+    cum = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(closed, axis=0), axis=1))])
+    peri = float(cum[-1])
+    span = rng.uniform(3.5, 8.0)
+    s0 = rng.uniform(0.0, peri)
+    sq = s0 + np.linspace(0.0, span, int(span / 0.06) + 1)
+    px = np.interp(sq, cum[:-1], pts[:, 0], period=peri)
+    py = np.interp(sq, cum[:-1], pts[:, 1], period=peri)
+    nx = np.interp(sq, cum[:-1], nrm[:, 0], period=peri)
+    ny = np.interp(sq, cum[:-1], nrm[:, 1], period=peri)
+    nl = np.hypot(nx, ny)
+    nx, ny = nx / nl, ny / nl
+    ph1, ph2 = rng.uniform(0, TWO_PI), rng.uniform(0, TWO_PI)
+    shift = 0.035 * (1.0 + np.sin(2.0 * math.pi * (sq - s0) / rng.uniform(2.5, 4.0) + ph1))  # 往內 0 到 0.07
+    z = z0 + rng.uniform(-0.1, 0.1) * (sq - s0 - span / 2) + 0.05 * np.sin(1.1 * (sq - s0) + ph2)
+    return np.stack([px - shift * nx, py - shift * ny, z], axis=1)
+
+
 def _microtubules(ctx, rng):
-    paths = []
-    cut_paths = []
-    long_psi = []
-    guard = 0
-    while len(paths) < 16 and guard < 4000:
-        guard += 1
-        i = len(paths)
-        want_cut = len(cut_paths) < 4 and i % 2 == 0
-        depth0 = rng.uniform(0.17, 0.33)
-        wob = rng.uniform(0, TWO_PI)
-        is_long = i % 8 < 5
-        if is_long:  # 長軸
-            psi0 = rng.uniform(math.radians(95), math.radians(200)) if want_cut else rng.uniform(0, TWO_PI)
-            if any(abs((psi0 - q + math.pi) % TWO_PI - math.pi) < 0.32 for q in long_psi):
+    """16 條：10 條沿長軸（上面 4、下面 2、前面 3、後面 1）、6 條環向。回傳 (路徑清單, 掀開區內的路徑編號)。
+    路徑每一點到細胞膜內表面的距離都在 MT_BAND 內；掀開區內的微管仍照畫（和原本一樣露在外面）。"""
+    specs = [
+        ("top", True), ("top", True), ("top", True), ("front", True), ("front", True),
+        ("top", False), ("front", False), ("back", False), ("bottom", False), ("bottom", False),
+        ("ring", True), ("ring", True), ("ring", True), ("ring", False), ("ring", False), ("ring", False),
+    ]  # fmt: skip
+    paths, cut_paths = [], []
+    taken = {}  # face -> 已用的位置
+    for face, want_cut in specs:
+        for _ in range(600):
+            if face == "ring":
+                lo, hi = (-1.0, 1.8) if want_cut else (-2.0, 2.0)
+                c0 = rng.uniform(lo, hi)
+                raw = _ring_path(rng, c0)
+                ok = _in_band(raw, MT_BAND[0], MT_BAND[1])
+                if not np.all(ok):
+                    continue
+                min_len = 1.0
+            else:
+                if face in ("top", "bottom"):
+                    lo, hi = (-2.5, 0.4) if want_cut else (-2.5, 2.5)
+                else:
+                    lo, hi = (-1.0, 2.0) if want_cut else (-2.2, 2.2)
+                c0 = rng.uniform(lo, hi)
+                raw = _long_path(rng, face, c0)
+                ok = _in_band(raw, MT_BAND[0] + 0.005, MT_BAND[1] - 0.005)
+                min_len = 1.2
+            if any(abs(c0 - q) < 0.45 for q in taken.get(face, [])):
                 continue
-            x = np.linspace(-3.9, 3.9, 40)
-            depth = np.clip(depth0 + 0.04 * np.sin(1.3 * x + wob), 0.16, 0.34)
-            psi = psi0 + 0.04 * np.sin(0.9 * x + 2 * wob)
-            raw = _cortex_points(psi, x, depth)
-        else:  # 環向
-            x0 = rng.uniform(-3.4, 3.4) if not want_cut else rng.uniform(-1.9, 3.4)
-            span = rng.uniform(0.9, 1.9)
-            psi0 = rng.uniform(math.radians(60), math.radians(170)) if want_cut else rng.uniform(0, TWO_PI)
-            psi = np.linspace(psi0, psi0 + span, 30)
-            depth = np.clip(depth0 + 0.03 * np.sin(2.0 * psi + wob), 0.16, 0.34)
-            raw = _cortex_points(psi, np.full_like(psi, x0), depth)
-        run = _free_run(ctx, raw, 0.07, 0.9)
-        if run is None:
-            continue
-        mid = run[len(run) // 2]
-        if want_cut and not C.in_cut(mid):
-            continue
-        paths.append(_resample(run, 0.26))
-        if is_long:
-            long_psi.append(psi0)
-        if C.in_cut(mid):
-            cut_paths.append(len(paths) - 1)
+            run = _free_run(ctx, raw, 0.07, min_len, ok)
+            if run is None:
+                continue
+            mid = run[len(run) // 2]
+            if want_cut and not C.in_cut(mid):
+                continue
+            taken.setdefault(face, []).append(c0)
+            paths.append(_resample(run, 0.1 if face == "ring" else 0.25))
+            if C.in_cut(mid):
+                cut_paths.append(len(paths) - 1)
+            break
+        else:
+            raise C.PlacementError(f"微管（{face}）在 600 次嘗試內排不出（目前 {len(paths)} 條）")
     if len(paths) < 16:
         raise C.PlacementError(f"只排得出 {len(paths)} 條微管（要 16 條）")
     if len(cut_paths) < 4:
@@ -940,16 +1046,18 @@ def _bez(p0, c, p1, n):
 
 
 def _microfilaments(ctx, rng):
-    out = []
+    """12 條：從皮層（距膜約 0.2）伸向細胞核周圍（停在 NUCLEUS_ZONE 外），略彎。回傳 (路徑清單, 掀開區內的路徑編號)。"""
+    out, starts, cut_idx = [], [], []
     guard = 0
-    while len(out) < 12 and guard < 6000:
+    while len(out) < 12 and guard < 8000:
         guard += 1
-        psi = rng.uniform(0, TWO_PI)
-        x = rng.uniform(-3.6, 3.6)
-        s = _cortex_points(psi, x, rng.uniform(0.16, 0.30))
         d = _unit([rng.gauss(0, 1) for _ in range(3)])
-        e = NC + d * rng.uniform(1.95, 2.15)
-        if not ctx.is_free(e, 0.07):
+        s = _ray_to_cortex(NC, d, rng.uniform(0.17, 0.25))[0]
+        if any(np.linalg.norm(s - q) < 0.7 for q in starts):
+            continue
+        d2 = _unit(d + 0.3 * _unit([rng.gauss(0, 1) for _ in range(3)]))
+        e = NC + d2 * rng.uniform(1.95, 2.15)
+        if not ctx.is_free(e, 0.07, respect_view=False):
             continue
         mid = (s + e) / 2
         off = _unit([rng.gauss(0, 1) for _ in range(3)])
@@ -958,12 +1066,17 @@ def _microfilaments(ctx, rng):
         pts = _bez(s, c, e, 40)
         if np.sum(np.linalg.norm(np.diff(pts, axis=0), axis=1)) < 1.0:
             continue
-        if not all(ctx.is_free(p, 0.07) for p in pts):
+        if not all(ctx.is_free(p, 0.07, respect_view=False) for p in pts):
             continue
         out.append(_resample(pts, 0.14))
+        starts.append(s)
+        if C.in_cut(out[-1][len(out[-1]) // 2]):
+            cut_idx.append(len(out) - 1)
     if len(out) < 12:
         raise C.PlacementError(f"只排得出 {len(out)} 條微絲（要 12 條）")
-    return out
+    if not cut_idx:
+        raise C.PlacementError("掀開區內沒有微絲")
+    return out, cut_idx
 
 
 # ----------------------------------------------------------------------------
@@ -1033,7 +1146,7 @@ def _check(name, co, ok_mask_fn, what):
 
 
 def _cavity_ok(co, margin):
-    return C.rbox_sdf(co, C.CAVITY_HALF, C.CAVITY_R) <= -margin
+    return C.cavity_sdf(co) <= -margin
 
 
 def build(ctx):
@@ -1100,21 +1213,16 @@ def build(ctx):
         raise ValueError(f"附著核糖體有頂點距細胞核中心 {rib_d.min():.3f} < 1.20")
     rib_min, rib_n = float(rib_d.min()), len(att)
 
-    free_c = []
-    for i in range(14):
-        c = ctx.sample_free(0.2, i < 6)
-        ctx.reserve(f"ribosome_free_{i}", c, 0.2)
-        free_c.append(np.array(c))
-    fc, fr = [], []
-    for c in free_c:
-        for q in _free_ribosome_cluster(rng):
-            fc.append(c + q)
+    # 游離核糖體群的形狀（群內相對位置、球半徑、球的不規則度）現在就用 rng 抽好，
+    # 讓後面平滑內質網與高基氏體取到的亂數序列和以前一致；群心要等油體取好位置後才決定。
+    FREE_N = 10
+    rel_c, fr = [], []
+    for _i in range(14):
+        for q in _free_ribosome_cluster(rng, FREE_N):
+            rel_c.append(q)
             fr.append(RIB_R * rng.uniform(0.93, 1.07))
-    fv, ff = _balls(fc, fr, 8, 4, rng, 0.06)
-    fobj = _make_obj("ribosome_free_main", fv, ff)
-    root = C.new_instance("ribosome", _bbox_center(fv))
-    C.add_part(root, fobj, "main")
-    report["ribosome_free"] = _tri_count(fobj)
+    fv_rel, ff = _balls(rel_c, fr, 8, 4, rng, 0.06)
+    verts_per_ball = len(fv_rel) // len(rel_c)
 
     # ---------------- 平滑內質網 ----------------
     rer3 = layers[3]
@@ -1193,26 +1301,74 @@ def build(ctx):
         C.add_part(root, ves_obj, "vesicle")
         report[f"golgi_{gi}"] = _tri_count(plate_obj) + _tri_count(ves_obj)
 
-    # ---------------- 細胞骨架 ----------------
+    # ---------------- 油體（5 顆：第 0 顆是代表，在固定位置、不 reserve）----------------
+    oil_pos = [np.array(C.OIL_BODY_REP, dtype=float)]
+    for i in range(1, 5):
+        c = ctx.sample_free(OIL_CLEAR, i == 1)  # 第 1 顆在掀開區
+        ctx.reserve(f"oil_body_{i}", c, OIL_CLEAR)
+        oil_pos.append(np.array(c))
+    sv0, sf0 = _uv_sphere(*OIL_SPHERE)
+    oil_tris, oil_check = 0, []
+    for i, (c, r) in enumerate(zip(oil_pos, OIL_RADII)):
+        ov, of = _orient(sv0 * r + c, sf0)
+        oobj = _make_obj(f"oil_body_{i}_main", ov, of)
+        root = C.new_instance("oil_body", _bbox_center(ov))
+        C.add_part(root, oobj, "main")
+        oil_tris += _tri_count(oobj)
+        far = float(np.linalg.norm(ov - c, axis=1).max())
+        if far > OIL_CLEAR:
+            raise ValueError(f"油體 {i} 有頂點距球心 {far:.3f} > {OIL_CLEAR}")
+        if not np.all(C.inside_cavity(ov, 0.02)):
+            raise ValueError(f"油體 {i} 有頂點不在空腔內（margin 0.02）")
+        oil_check.append((tuple(round(float(x), 3) for x in c), r, round(far, 3)))
+    report["oil_body"] = oil_tris
+
+    # ---------------- 游離核糖體群（群心避開視線走廊，並避開油體）----------------
+    free_c = []
+    for i in range(14):
+        c = ctx.sample_free(0.2, i < 6)
+        ctx.reserve(f"ribosome_free_{i}", c, 0.2)
+        free_c.append(np.array(c))
+    fv = fv_rel + np.repeat(np.array(free_c), FREE_N * verts_per_ball, axis=0)
+    fobj = _make_obj("ribosome_free_main", fv, ff)
+    root = C.new_instance("ribosome", _bbox_center(fv))
+    C.add_part(root, fobj, "main")
+    report["ribosome_free"] = _tri_count(fobj)
+
+    # ---------------- 皮層微管與肌動蛋白微絲 ----------------
     mts, cut_idx = _microtubules(ctx, rng)
-    fil = _microfilaments(ctx, rng)
-    mv, mf = _merge([_tube(p, 0.022, 8) for p in mts])
-    fv2, ff2 = _merge([_tube(p, 0.012, 6) for p in fil])
-    mt_obj = _make_obj("cytoskeleton_main", mv, mf)
-    fl_obj = _make_obj("cytoskeleton_filament", fv2, ff2)
-    root = C.new_instance("cytoskeleton", _bbox_center(np.vstack([mv, fv2])))
+    fil, fil_cut = _microfilaments(ctx, rng)
+    mt_d = np.concatenate([-C.cavity_sdf(p) for p in mts])  # 路徑點距膜
+    if mt_d.min() < MT_BAND[0] or mt_d.max() > MT_BAND[1]:
+        raise ValueError(f"微管路徑距膜 {mt_d.min():.3f}~{mt_d.max():.3f}，超出 {MT_BAND[0]}~{MT_BAND[1]}")
+    if len(mts) != 16 or len(fil) != 12:
+        raise ValueError(f"微管 {len(mts)} 條、微絲 {len(fil)} 條，應為 16 與 12")
+    mv, mf = _merge([_tube(p, MT_R, 8) for p in mts])
+    fv2, ff2 = _merge([_tube(p, AF_R, 6) for p in fil])
+    mt_obj = _make_obj("microtubule_main", mv, mf)
+    root = C.new_instance("microtubule", _bbox_center(mv))
     C.add_part(root, mt_obj, "main")
-    C.add_part(root, fl_obj, "filament")
     pick = max(cut_idx, key=lambda i: float(mts[i][len(mts[i]) // 2] @ CAM))
     C.add_anchor(root, mts[pick][len(mts[pick]) // 2])
-    report["cytoskeleton"] = _tri_count(mt_obj) + _tri_count(fl_obj)
-    allcy = np.vstack([mv, fv2])
-    _check("細胞骨架", allcy, lambda c: _cavity_ok(c, 0.05), "不在空腔內（margin 0.05）")
-    q = (allcy - VC) / (VAX + 0.15)
-    if np.any(np.sum(q * q, axis=1) < 1.0):
-        raise ValueError("細胞骨架進入液泡（半軸各加 0.15）")
-    if np.any(np.linalg.norm(allcy - NC, axis=1) < C.NUCLEUS_ZONE["radius"]):
-        raise ValueError("細胞骨架進入 NUCLEUS_ZONE")
+    report["microtubule"] = _tri_count(mt_obj)
+    af_obj = _make_obj("actin_filament_main", fv2, ff2)
+    root = C.new_instance("actin_filament", _bbox_center(fv2))
+    C.add_part(root, af_obj, "main")
+    pick = max(fil_cut, key=lambda i: float(fil[i][len(fil[i]) // 2] @ CAM))
+    C.add_anchor(root, fil[pick][len(fil[pick]) // 2])
+    report["actin_filament"] = _tri_count(af_obj)
+    mt_vd = -C.cavity_sdf(mv)  # 管的頂點距膜
+    if mt_vd.min() < MT_MESH_BAND[0] or mt_vd.max() > MT_MESH_BAND[1]:
+        raise ValueError(
+            f"微管頂點距膜 {mt_vd.min():.3f}~{mt_vd.max():.3f}，超出 {MT_MESH_BAND[0]}~{MT_MESH_BAND[1]}"
+        )
+    for name, co in (("微管", mv), ("微絲", fv2)):
+        _check(name, co, lambda c: _cavity_ok(c, 0.05), "不在空腔內（margin 0.05）")
+        q = (co - VC) / (VAX + 0.15)
+        if np.any(np.sum(q * q, axis=1) < 1.0):
+            raise ValueError(f"{name}進入液泡（半軸各加 0.15）")
+        if np.any(np.linalg.norm(co - NC, axis=1) < C.NUCLEUS_ZONE["radius"]):
+            raise ValueError(f"{name}進入 NUCLEUS_ZONE")
 
     total = sum(report.values())
     print(f"[endomembrane] 三角面 {total}：{report}")
@@ -1220,5 +1376,9 @@ def build(ctx):
     print(
         f"[endomembrane] 自檢：粗糙內質網距核心 {rer_range[0]:.3f}~{rer_range[1]:.3f}；"
         f"平滑內質網距核心 {ser_range[0]:.3f}~{ser_range[1]:.3f}；高基氏體最大半徑 {gol_max}；"
-        f"掀開區微管 {len(cut_idx)} 條"
+        f"掀開區微管 {len(cut_idx)} 條、微絲 {len(fil_cut)} 條"
+    )
+    print(
+        f"[endomembrane] 微管路徑距膜 {mt_d.min():.3f}~{mt_d.max():.3f}、頂點距膜 {mt_vd.min():.3f}~{mt_vd.max():.3f}；"
+        f"油體（位置、半徑、最遠頂點）{oil_check}"
     )
