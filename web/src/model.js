@@ -50,6 +50,7 @@ export function indexModel(root) {
   });
   for (const e of byId.values()) if (!e.anchor) e.anchor = e.rep;
 
-  const sphere = new Box3().setFromObject(root).getBoundingSphere(new Sphere());
-  return { byId, lid, center: sphere.center.clone(), radius: sphere.radius };
+  const box = new Box3().setFromObject(root);
+  const sphere = box.getBoundingSphere(new Sphere());
+  return { byId, lid, center: sphere.center.clone(), radius: sphere.radius, box };
 }

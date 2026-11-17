@@ -15,7 +15,7 @@ async function main() {
   view.scene.add(model);
   if (index.lid) index.lid.visible = false; // 本階段畫面是掀開狀態
 
-  view.frame(index.center, index.radius);
+  view.frame(index.box);
 
   const meshes = [];
   model.traverse((o) => { if (o.isMesh) meshes.push(o); });

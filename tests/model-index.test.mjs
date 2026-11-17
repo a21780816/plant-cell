@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Object3D } from 'three';
+import { Object3D, Vector3 } from 'three';
 import { parseModel, indexModel, findOrganelle, findInstanceRoot } from '../web/src/model.js';
 
 async function load() {
@@ -21,6 +21,7 @@ test('indexModel 依標記約定建立索引', async () => {
   assert.equal(wall.anchor.userData.anchor, 1);
   assert.notEqual(index.lid, null);
   assert.ok(index.radius > 0);
+  assert.ok(index.box.getCenter(new Vector3()).distanceTo(index.center) < 1e-6);
 });
 
 test('findOrganelle 越過沒有標記的中間層，頂層都沒有時回傳 null', () => {
