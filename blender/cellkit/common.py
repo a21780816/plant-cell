@@ -4,8 +4,8 @@
 本檔是版面常數的唯一來源，修改前請先確認計畫檔的「座標與版面」表。
 
 資料形狀（給其他模組用）：
-  CELL_HALF            (hx, hy, hz)  細胞壁外表面半寬
-  CAVITY_HALF          (hx, hy, hz)  空腔（細胞膜內側）半寬
+  CELL_HALF            (hx, hy, hz)  細胞壁外表面（六角柱）的外接半寬
+  CAVITY_HALF          (hx, hy, hz)  空腔（細胞膜內側，六角柱）的外接半寬
   CUT_X / CUT_Y / CUT_Z               掀開區界線：x >= CUT_X and y <= CUT_Y and z >= CUT_Z
   VACUOLE              {'center', 'axes', 'ripple'}
   NUCLEUS              {'center', 'radius'}
@@ -30,14 +30,30 @@ PALETTE_PATH = os.path.join(ROOT, "shared", "palette.json")
 # ----------------------------------------------------------------------------
 # 座標與版面常數
 # ----------------------------------------------------------------------------
-CELL_HALF = (5.0, 3.5, 3.2)
-CORNER_R = 1.0
+# 外形是六角柱：本細胞的細胞壁外表面，頂點 (±HEX_TIP_X, 0)、(±HEX_SHOULDER_X, ±HEX_HALF_Y)，高度 ±HEX_HALF_Z
+HEX_TIP_X = 6.6
+HEX_SHOULDER_X = 4.6
+HEX_HALF_Y = 3.5
+HEX_HALF_Z = 3.2
+EDGE_BEVEL = 0.06
+CELL_HALF = (HEX_TIP_X, HEX_HALF_Y, HEX_HALF_Z)  # 細胞壁外表面的外接半寬
+CORNER_R = 1.0  # 圓角盒時代的常數，保留給尚未改版的模組；本檔不再用它判斷空腔
 WALL_T = 0.28
 GAP = 0.04
 MEMBRANE_T = 0.06
-_INSET = WALL_T + GAP + MEMBRANE_T  # 0.38
-CAVITY_HALF = tuple(h - _INSET for h in CELL_HALF)  # (4.62, 3.12, 2.82)
-CAVITY_R = CORNER_R - _INSET  # 0.62
+LAMELLA_T = 0.06  # 中膠層厚
+NEIGHBOR_WALL_T = 0.28  # 相鄰細胞的壁厚
+FLANGE_LEN = 1.5  # 六條直立稜上相鄰細胞壁伸出的長度（自該稜的外緣量起）
+_INSET = WALL_T + GAP + MEMBRANE_T  # 0.38：空腔各面相對於細胞壁外表面的內縮量
+CAVITY_R = CORNER_R - _INSET  # 0.62（圓角盒時代，只給 rbox_sdf 的舊呼叫端用）
+
+# 斜面（六角形 +x/+y 那一邊）的單位外法向與空腔的斜面常數
+_SLANT_NORM = math.hypot(HEX_HALF_Y, HEX_TIP_X - HEX_SHOULDER_X)
+_SLANT_NX = HEX_HALF_Y / _SLANT_NORM
+_SLANT_NY = (HEX_TIP_X - HEX_SHOULDER_X) / _SLANT_NORM
+_CAV_H = (_SLANT_NX * HEX_SHOULDER_X + _SLANT_NY * HEX_HALF_Y) - _INSET  # 約 5.3504
+# 空腔的外接半寬：x 取六角形尖端（y = 0）處
+CAVITY_HALF = (_CAV_H / _SLANT_NX, HEX_HALF_Y - _INSET, HEX_HALF_Z - _INSET)  # 約 (6.162, 3.12, 2.82)
 
 CUT_X, CUT_Y, CUT_Z = -2.2, 0.8, -1.4
 
@@ -59,6 +75,16 @@ REP_POS = {
     "mitochondrion": (0.9, -2.5, -0.7),
     "peroxisome": (0.5, -2.6, 1.6),
 }
+OIL_BODY_REP = (3.9, -2.0, -0.9)
+OIL_BODY_KEEPOUT = 0.22
+# 三條跨液泡細胞質絲：通過點 = 液泡中心 + off，方向 dir；端點取在液泡橢球值等於 STRAND_END_LEVEL 處
+STRANDS = [
+    {"off": (0.3, -0.2, 0.9), "dir": (0.85, -0.50, 0.15)},
+    {"off": (-1.3, 0.3, 0.1), "dir": (0.20, -0.45, 0.87)},
+    {"off": (0.5, 0.3, -0.6), "dir": (0.55, -0.80, -0.05)},
+]
+STRAND_END_LEVEL = 1.10
+STRAND_R = 0.16  # 細胞質絲的管半徑（版面驗算與 is_free 用）
 CAMERA_DIR = (0.62, -0.62, 0.48)
 SEED = 20261117
 
@@ -100,11 +126,78 @@ def rbox_sdf(p, half, r):
 
 
 def cavity_sdf(p):
-    return float(rbox_sdf(p, CAVITY_HALF, CAVITY_R))
+    """六角柱空腔的有號距離（負值在內）：max(|z| - hz, |y| - hy, 斜面距離 - h)。
+    p 可為單點（回傳 float）或 (N, 3) 陣列（回傳長度 N 的陣列）。"""
+    p = _np(p)
+    ax, ay, az = np.abs(p[..., 0]), np.abs(p[..., 1]), np.abs(p[..., 2])
+    d = np.maximum(
+        np.maximum(az - CAVITY_HALF[2], ay - CAVITY_HALF[1]),
+        _SLANT_NX * ax + _SLANT_NY * ay - _CAV_H,
+    )
+    return float(d) if p.ndim == 1 else d
 
 
 def inside_cavity(p, margin=0.0):
     return cavity_sdf(p) <= -margin
+
+
+def hex_vertices():
+    """本細胞的細胞壁外表面六個頂點 [(x, y)]，逆時針，從 (HEX_TIP_X, 0) 開始。"""
+    t, s, h = HEX_TIP_X, HEX_SHOULDER_X, HEX_HALF_Y
+    return [(t, 0.0), (s, h), (-s, h), (-t, 0.0), (-s, -h), (s, -h)]
+
+
+def flange_dirs():
+    """六條直立稜上相鄰細胞壁朝外伸出的單位方向（該頂點兩條鄰邊外法向的角平分線），順序同 hex_vertices()。"""
+    v = hex_vertices()
+    out = []
+    for k in range(6):
+        p0, p, p1 = _np(v[k - 1]), _np(v[k]), _np(v[(k + 1) % 6])
+        ns = []
+        for a, b in ((p0, p), (p, p1)):
+            e = b - a
+            ns.append(_unit((e[1], -e[0])))  # 逆時針多邊形，邊向量順時針轉 90 度是外法向
+        d = _unit(ns[0] + ns[1])
+        out.append((float(d[0]), float(d[1])))
+    return out
+
+
+def strand_ends(i):
+    """第 i 條細胞質絲的兩個端點 (near, far)；near 在正方向。"""
+    s = STRANDS[i]
+    ax = _np(VACUOLE["axes"])
+    u = _np(s["off"]) / ax
+    d = _unit(s["dir"])
+    w = d / ax
+    a, b, c = float(w @ w), float(u @ w), float(u @ u) - STRAND_END_LEVEL ** 2
+    disc = math.sqrt(b * b - a * c)
+    base = _np(VACUOLE["center"]) + _np(s["off"])
+    near = base + d * ((-b + disc) / a)
+    far = base + d * ((-b - disc) / a)
+    return tuple(float(x) for x in near), tuple(float(x) for x in far)
+
+
+def _seg_point_dist(a, b, p):
+    a, b, p = _np(a), _np(b), _np(p)
+    ab = b - a
+    t = float(np.clip((p - a) @ ab / (ab @ ab), 0.0, 1.0))
+    return float(np.linalg.norm(p - (a + t * ab)))
+
+
+def _seg_seg_dist(a0, a1, b0, b1):
+    """兩線段最近距離（Ericson, Real-Time Collision Detection）。"""
+    a0, a1, b0, b1 = _np(a0), _np(a1), _np(b0), _np(b1)
+    d1, d2, r = a1 - a0, b1 - b0, a0 - b0
+    a, e, f = d1 @ d1, d2 @ d2, d2 @ r
+    c, b = d1 @ r, d1 @ d2
+    den = a * e - b * b
+    s = float(np.clip((b * f - c * e) / den, 0.0, 1.0)) if den > 1e-12 else 0.0
+    t = (b * s + f) / e
+    if t < 0.0:
+        t, s = 0.0, float(np.clip(-c / a, 0.0, 1.0))
+    elif t > 1.0:
+        t, s = 1.0, float(np.clip((b - c) / a, 0.0, 1.0))
+    return float(np.linalg.norm((a0 + d1 * s) - (b0 + d2 * t)))
 
 
 def _sector_sdf(P, apex, axis, min_dot, radius):
@@ -160,6 +253,12 @@ class Ctx:
             return False
         for g in GOLGI["centers"]:
             if np.linalg.norm(c - _np(g)) < GOLGI["zone_radius"] + radius:
+                return False
+        if np.linalg.norm(c - _np(OIL_BODY_REP)) < OIL_BODY_KEEPOUT + radius:
+            return False
+        for i in range(len(STRANDS)):
+            near, far = strand_ends(i)
+            if _seg_point_dist(near, far, c) < STRAND_R + radius:
                 return False
         for _name, rc, rr in self.reserved:
             if np.linalg.norm(c - _np(rc)) < rr + radius:
@@ -225,6 +324,7 @@ def validate_layout():
         shapes[f"golgi{i}"] = ("sphere", _np(g), GOLGI["zone_radius"])
     for k, c in REP_POS.items():
         shapes[f"rep_{k}"] = ("sphere", _np(c), REP_CLEARANCE[k])
+    shapes["oil_body"] = ("sphere", _np(OIL_BODY_REP), OIL_BODY_KEEPOUT)
 
     def dist_to(shape, P):
         """點 P (N,3) 到 shape 的有號距離。"""
@@ -268,7 +368,7 @@ def validate_layout():
             dirs /= np.linalg.norm(dirs, axis=1, keepdims=True)
             dirs = dirs[dirs @ ax >= s[3]][:n]
             pts = s[1] + dirs * s[4] * np.cbrt(rng.uniform(size=(len(dirs), 1)))
-        out = float(np.max(rbox_sdf(pts, CAVITY_HALF, CAVITY_R)))
+        out = float(np.max(cavity_sdf(pts)))
         if out > 0:
             raise ValueError(f"版面不合：{name} 超出空腔 {out:.3f}")
 
@@ -283,6 +383,30 @@ def validate_layout():
             g = gap(a, b)
             if g < MIN_GAP:
                 raise ValueError(f"版面不合：{a} 與 {b} 的間隙 {g:.3f} 小於 {MIN_GAP}")
+
+    # 2b. 油體代表個體在空腔內（含其禁入半徑）；三條細胞質絲：端點在空腔內並離核夠遠、
+    # 與其他固定構造的間隙（扣掉管半徑）不小於 MIN_GAP、彼此最近距離不小於 0.4
+    if not inside_cavity(OIL_BODY_REP, OIL_BODY_KEEPOUT):
+        raise ValueError(f"版面不合：油體代表個體 {OIL_BODY_REP} 不在空腔內（需內縮 {OIL_BODY_KEEPOUT}）")
+    segs = [strand_ends(i) for i in range(len(STRANDS))]
+    nz = _np(NUCLEUS_ZONE["center"])
+    for i, seg in enumerate(segs):
+        for end_name, p in zip(("near", "far"), seg):
+            if not inside_cavity(p, 0.15):
+                raise ValueError(f"版面不合：細胞質絲 {i} 的 {end_name} 端點 {p} 不在空腔內（需內縮 0.15）")
+            if np.linalg.norm(_np(p) - nz) <= NUCLEUS_ZONE["radius"] + 0.1:
+                raise ValueError(f"版面不合：細胞質絲 {i} 的 {end_name} 端點離細胞核過近")
+        for name, s in shapes.items():
+            if name in ("vacuole", "ser_zone"):
+                continue
+            g = _seg_point_dist(seg[0], seg[1], s[1]) - s[2] - STRAND_R
+            if g < MIN_GAP:
+                raise ValueError(f"版面不合：細胞質絲 {i} 與 {name} 的間隙 {g:.3f} 小於 {MIN_GAP}")
+    for i in range(len(segs)):
+        for j in range(i + 1, len(segs)):
+            d = _seg_seg_dist(segs[i][0], segs[i][1], segs[j][0], segs[j][1])
+            if d < 0.4:
+                raise ValueError(f"版面不合：細胞質絲 {i} 與 {j} 的中心線距離 {d:.3f} 小於 0.4")
 
     # 3. 粗糙內質網與平滑內質網的扇形區不重疊（半角之和 <= 兩軸夾角）
     cos_between = float(_unit(RER["axis"]) @ _unit(SER["axis"]))
