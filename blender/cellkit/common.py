@@ -412,16 +412,40 @@ def add_anchor(root, location):
     _parent_keep_world(a, root)
 
 
+def _check_tags_before_export():
+    """匯出前檢查：每個掛進場景的網格要有 organelle，且祖先鏈上有個體根（inst）或蓋子根（lid）。"""
+    problems = []
+    bpy.context.view_layer.update()  # 剛 link 或剛刪除的物件要先同步
+    for o in bpy.context.view_layer.objects:
+        if o is None or o.type != "MESH":
+            continue
+        if o.get("organelle") is None:
+            problems.append(f"{o.name}：缺 organelle")
+            continue
+        p = o.parent
+        while p is not None and "inst" not in p and "lid" not in p:
+            p = p.parent
+        if p is None:
+            problems.append(f"{o.name}：沒有個體根（inst）或蓋子根（lid）祖先")
+    if problems:
+        raise ValueError("匯出前標記檢查未通過：\n" + "\n".join(problems))
+
+
 def export_glb(path):
     """匯出整個場景為 glb（蓋子一定在；不匯出相機與燈光）。"""
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    hidden = []
+    _check_tags_before_export()
+    bpy.context.view_layer.update()
+    in_layer = {o for o in bpy.context.view_layer.objects if o is not None}
+    hidden = []  # (物件, hide_render, hide_viewport, hide_get 或 None)
     for o in bpy.data.objects:
-        if o.hide_render or o.hide_viewport or o.hide_get():
-            hidden.append((o, o.hide_render, o.hide_viewport))
+        hg = o.hide_get() if o in in_layer else None
+        if o.hide_render or o.hide_viewport or hg:
+            hidden.append((o, o.hide_render, o.hide_viewport, hg))
             o.hide_render = False
             o.hide_viewport = False
-            o.hide_set(False)
+            if hg:
+                o.hide_set(False)
     bpy.ops.object.select_all(action="DESELECT")
     bpy.ops.export_scene.gltf(
         filepath=path,
@@ -434,6 +458,8 @@ def export_glb(path):
         export_lights=False,
         use_selection=False,
     )
-    for o, hr, hv in hidden:
+    for o, hr, hv, hg in hidden:
         o.hide_render = hr
         o.hide_viewport = hv
+        if hg:
+            o.hide_set(True)
