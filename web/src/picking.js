@@ -17,15 +17,21 @@ export function instanceOfMesh(mesh, index) {
   return entry && entry.rep ? entry.rep.userData.inst : 0;
 }
 
+// 蓋子底下的網格：外觀只由 lid.js 控制，不參與滑過與點選，也不受 highlight.js 管理。
+export function isLidMesh(mesh) {
+  for (let o = mesh; o; o = o.parent) if (o.userData && o.userData.lid === 1) return true;
+  return false;
+}
+
 function isVisibleChain(o) {
   for (let p = o; p; p = p.parent) if (p.visible === false) return false;
   return true;
 }
 
-// 射線會穿過：自己或任一層祖先 visible === false 的網格，以及 isPickable(id) 為 false 的構造。
+// 射線會穿過：蓋子底下的網格、自己或任一層祖先 visible === false 的網格，以及 isPickable(id) 為 false 的構造。
 export function createPicker({ dom, camera, index, isPickable, onHover, onPick, onPressChange = () => {} }) {
   const meshes = [];
-  for (const entry of index.byId.values()) meshes.push(...entry.meshes);
+  for (const entry of index.byId.values()) meshes.push(...entry.meshes.filter((m) => !isLidMesh(m)));
   const raycaster = new Raycaster();
   const ndc = new Vector2();
 

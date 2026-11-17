@@ -4,26 +4,47 @@ import palette from '../../shared/palette.json';
 import { createScene } from './scene.js';
 import { parseModel, indexModel, findOrganelle, findInstanceRoot } from './model.js';
 import { applyMaterials } from './materials.js';
-import { ORGANELLES, getOrganelle } from './organelles.js';
+import { ORGANELLES, INTRO, getOrganelle } from './organelles.js';
 import { GHOST_IDS } from './config.js';
 import { createStore } from './state.js';
 import { createPicker } from './picking.js';
 import { createHighlighter } from './highlight.js';
 import { createCameraMoves } from './camera-moves.js';
+import { createLid } from './lid.js';
 import { mountPanel } from './ui/panel.js';
 import { mountList } from './ui/list.js';
+import { mountIntro } from './ui/intro.js';
 import { placeHoverName } from './ui/hover-name.js';
 
 const canvas = document.getElementById('stage');
 const root = document.documentElement;
 
+const FALLBACK_TEXT = '這個瀏覽器無法顯示 3D 內容，請改用新版的 Chrome 開啟。';
+const IDLE_MS = 4000; // 使用者閒置這麼久才開始自轉
+
+// 建立 WebGL 失敗：只顯示說明（開場卡片與清單都不出現），並留下錯誤原因供除錯。
+function showFallback(e) {
+  root.dataset.cellError = String(e && e.message ? e.message : e);
+  console.warn('[cell] 無法建立 WebGL', e);
+  document.getElementById('intro').hidden = true;
+  const box = document.getElementById('fallback');
+  box.textContent = FALLBACK_TEXT;
+  box.hidden = false;
+}
+
 async function main() {
-  const view = createScene(canvas);
+  let view;
+  try {
+    view = createScene(canvas);
+  } catch (e) {
+    showFallback(e);
+    return;
+  }
   const model = await parseModel(modelBytes);
   const index = indexModel(model);
   applyMaterials(index, palette);
   view.scene.add(model);
-  if (index.lid) index.lid.visible = false; // 本階段畫面是掀開狀態
+  const lid = createLid(index); // 開場時蓋著；按下開始後掀開
 
   view.frame(index.box);
 
@@ -51,6 +72,14 @@ async function main() {
     onSelect: (id) => store.dispatch({ type: 'select', id, inst: null }),
   });
   const hoverName = document.getElementById('hover-name');
+  const intro = mountIntro(document.getElementById('intro'), {
+    intro: INTRO,
+    onStart: () => {
+      store.dispatch({ type: 'start' });
+      lid.open();
+      intro.hide();
+    },
+  });
 
   const isPickable = (id) => {
     const o = getOrganelle(id);
@@ -92,11 +121,33 @@ async function main() {
     if (show) placeLabel();
   }
 
+  // ---- 自轉：探索階段、蓋子已打開、沒有選取、沒有鏡頭動畫、使用者閒置滿 4 秒才轉 ----
+  let lastActivity = performance.now();
+  let openedAt = null; // 蓋子完全打開的時刻；閒置計時從這裡起算
+  function updateAutoRotate() {
+    const now = performance.now();
+    const s = store.getState();
+    if (lid.isOpen && openedAt === null) openedAt = now;
+    const want = s.phase === 'explore' && lid.isOpen && !s.selected && !moves.busy
+      && now - Math.max(lastActivity, openedAt) >= IDLE_MS;
+    if (want !== view.isAutoRotating()) view.setAutoRotate(want);
+  }
+  function noteActivity() {
+    lastActivity = performance.now();
+    updateAutoRotate(); // 一操作就立刻停止自轉
+  }
+  for (const type of ['pointerdown', 'wheel', 'keydown', 'touchstart']) {
+    window.addEventListener(type, noteActivity, { capture: true, passive: true });
+  }
+  canvas.addEventListener('pointermove', noteActivity, { passive: true });
+
   let prev = { selected: undefined, hovered: undefined };
   function render(s) {
+    document.body.dataset.phase = s.phase; // 清單等介面依階段顯示（CSS）
     highlighter.apply(s);
     if (s.hovered !== prev.hovered) paintHover();
     if (s.selected !== prev.selected) {
+      noteActivity();
       const sel = s.selected;
       list.setActive(sel ? sel.id : null);
       if (sel) {
@@ -159,6 +210,8 @@ async function main() {
     view, // 除錯與端對端測試用
     store,
     cameraBusy: () => moves.busy,
+    lidOpen: () => lid.isOpen,
+    autoRotating: () => view.isAutoRotating(),
     hitAt: (x, y) => picker.hitAt(x, y), // 與點選相同規則的射線測試
     screenPointOf,
     repScreenPoint(id) {
@@ -184,7 +237,9 @@ async function main() {
     dts.push(dt);
     if (dts.length > 60) dts.shift();
     moves.update(dt);
+    lid.update(dt);
     highlighter.update(dt);
+    updateAutoRotate();
     // 鏡頭在動（動畫或阻尼）而游標不動時，滑過狀態要跟著畫面重算；每畫面最多一次
     const me = view.camera.matrixWorld.elements;
     let moved = false;

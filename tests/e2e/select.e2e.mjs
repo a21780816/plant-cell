@@ -14,6 +14,9 @@ async function boot() {
     await page.waitFor(READY);
     const failure = await page.evaluate('document.documentElement.dataset.cellError || ""');
     assert.equal(failure, '', `檢視器啟動失敗：${failure}`);
+    const b = await page.evaluate("(() => { const r = document.getElementById('intro-start').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()");
+    await page.click(b.x, b.y);
+    await page.waitFor('window.__cell.lidOpen() === true');
   } catch (e) { await page.close(); throw e; }
   return page;
 }
@@ -97,14 +100,15 @@ test('選取、發亮、面板與清單', async () => {
       const meshes = [...index.byId.values()].flatMap((e) => e.meshes);
       const dimHex = 0xD8D2C4;
       const dist = (hex) => [16, 8, 0].reduce((s, sh) => s + Math.abs(((hex >> sh) & 255) - ((dimHex >> sh) & 255)), 0);
-      const ghosts = meshes.filter((m) => ${JSON.stringify(GHOST_IDS)}.includes(m.userData.organelle) || m.parent && ${JSON.stringify(GHOST_IDS)}.includes(m.parent.userData.organelle))
+      const underLid = (m) => { for (let o = m; o; o = o.parent) if (o.userData.lid === 1) return true; return false; };
+      const ghosts = meshes.filter((m) => !underLid(m) && (${JSON.stringify(GHOST_IDS)}.includes(m.userData.organelle) || m.parent && ${JSON.stringify(GHOST_IDS)}.includes(m.parent.userData.organelle)))
         .map((m) => { const i = meshes.indexOf(m); return { n: m.name, id: m.userData.organelle, part: m.userData.part, t: m.material.transparent, d: m.material.depthWrite, o: m.material.opacity, r: m.renderOrder, base: snap[i].o }; });
       const chloro = index.byId.get('chloroplast').meshes.map((m) => ({ now: dist(m.material.color.getHex()), was: dist(m.material.color.clone().fromArray(snap[meshes.indexOf(m)].c).getHex()) }));
       const sel = index.byId.get('nucleus').meshes.map((m) => m.material.emissiveIntensity);
-      const others = meshes.filter((m) => !index.byId.get('nucleus').meshes.includes(m)).map((m) => m.material.emissiveIntensity);
+      const others = meshes.filter((m) => !underLid(m) && !index.byId.get('nucleus').meshes.includes(m)).map((m) => m.material.emissiveIntensity);
       return { ghosts, chloro, selMin: Math.min(...sel), othersMax: Math.max(...others) };
     })()`);
-    assert.ok(dim.ghosts.length >= 12, '應找到所有外殼網格');
+    assert.ok(dim.ghosts.length >= 8, '應找到所有外殼網格（蓋子底下的網格不受發亮管理，不計）');
     for (const g of dim.ghosts) {
       const expected = ghostOrderOf(g.id, { userData: { part: g.part }, name: g.n });
       assert.equal(g.t, true, `${g.n} 應為半透明`);

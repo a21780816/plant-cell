@@ -10,6 +10,9 @@ test('檢視器載入完整模型', async () => {
     await page.waitFor("document.documentElement.dataset.cellReady === '1' || !!document.documentElement.dataset.cellError");
     const failure = await page.evaluate('document.documentElement.dataset.cellError || ""');
     assert.equal(failure, '', `檢視器啟動失敗：${failure}`);
+    const b = await page.evaluate("(() => { const r = document.getElementById('intro-start').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()");
+    await page.click(b.x, b.y);
+    await page.waitFor('window.__cell.lidOpen() === true');
     const s = await page.evaluate('window.__cell.stats()');
     console.log('stats', JSON.stringify({ ...s, ids: s.ids.length }));
     assert.equal(s.unresolved, 0);

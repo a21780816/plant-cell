@@ -1,6 +1,6 @@
 // 唯一的狀態來源：發亮、面板、清單、鏡頭都訂閱這裡，不各自維護「目前選了誰」。
 export const initialState = {
-  phase: 'explore', // Task 10 改為 'intro'
+  phase: 'intro',   // 'intro'（開場，只接受 start）→ 'explore'
   selected: null,   // { id, inst }；inst 為 null 表示從清單選的
   hovered: null,    // { id, inst }
   exploded: false,
@@ -9,6 +9,8 @@ export const initialState = {
 };
 
 export function reduce(state, action) {
+  if (action.type === 'start') return state.phase === 'intro' ? { ...state, phase: 'explore' } : state;
+  if (state.phase === 'intro') return state; // 開場階段除了 start 以外一律無效
   switch (action.type) {
     case 'hover':
       return { ...state, hovered: { id: action.id, inst: action.inst ?? null } };

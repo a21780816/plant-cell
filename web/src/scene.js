@@ -68,6 +68,7 @@ export function createScene(canvas) {
   controls.enablePan = false;
   controls.minDistance = 2.5;
   controls.maxDistance = 36;
+  controls.autoRotateSpeed = 0.6; // 搭配 update(dt)：每秒 2π/60 × 0.6 弧度 = 3.6 度（約 100 秒一圈），與更新率無關
 
   const dirDefault = new Vector3(0.62, 0.48, 0.62).normalize();
   let boxFramed = null;
@@ -145,7 +146,7 @@ export function createScene(canvas) {
     renderer.setAnimationLoop((now) => {
       const dt = Math.max(0, (now - last) / 1000);
       last = now;
-      controls.update();
+      controls.update(Math.min(dt, 0.1)); // 傳入經過的秒數，自轉速度才不隨更新率改變（上限避免分頁暫停後一次轉很多）
       renderer.render(scene, camera);
       if (onFrame) onFrame(dt);
     });
@@ -155,5 +156,15 @@ export function createScene(canvas) {
   // 否則 resize() 會把鏡頭拉回預設位置。動畫回到預設位置後以 false 重設。
   function setUserMoved(v) { userMoved = !!v; }
 
-  return { renderer, scene, camera, controls, start, resize, frame, defaultPose, setUserMoved };
+  // 自轉繞目前目標點水平旋轉。開始自轉就視為「鏡頭已離開預設位置」，視窗縮放才不會把鏡頭拉回預設。
+  function setAutoRotate(on) {
+    controls.autoRotate = !!on;
+    if (on) userMoved = true;
+  }
+  const isAutoRotating = () => controls.autoRotate;
+
+  return {
+    renderer, scene, camera, controls, start, resize, frame, defaultPose, setUserMoved,
+    setAutoRotate, isAutoRotating,
+  };
 }

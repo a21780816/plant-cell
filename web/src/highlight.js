@@ -1,6 +1,6 @@
 import { Color } from 'three';
 import { findOrganelle } from './model.js';
-import { instanceOfMesh } from './picking.js';
+import { instanceOfMesh, isLidMesh } from './picking.js';
 import { GHOST_IDS, ghostOrderOf } from './config.js';
 
 // 發亮與變暗全用材質參數漸變，不用後製。
@@ -31,6 +31,7 @@ export function createHighlighter(index) {
   const recs = [];
   for (const [id, entry] of index.byId) {
     for (const mesh of entry.meshes) {
+      if (isLidMesh(mesh)) continue; // 蓋子的外觀由 lid.js 獨佔，不複製也不改動它的材質
       const mat = mesh.material.clone(); // 每個網格各自一份材質，才能逐個體發亮
       mesh.material = mat;
       const own = findOrganelle(mesh) ?? id;
