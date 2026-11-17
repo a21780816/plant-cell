@@ -66,7 +66,7 @@ export function createScene(canvas) {
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.enablePan = false;
-  controls.minDistance = 7;
+  controls.minDistance = 2.5;
   controls.maxDistance = 36;
 
   const dirDefault = new Vector3(0.62, 0.48, 0.62).normalize();
@@ -85,6 +85,12 @@ export function createScene(canvas) {
       corners, target: c.toArray(), dir: dirDefault.toArray(), fovDeg: camera.fov, aspect: camera.aspect,
     });
     return Math.max(d, controls.minDistance);
+  }
+
+  // 目前畫面長寬比下的預設鏡頭位置（不移動鏡頭）；供鏡頭動畫當終點。
+  function defaultPose() {
+    const target = boxFramed.getCenter(new Vector3());
+    return { target, position: target.clone().addScaledVector(dirDefault, defaultDistance()) };
   }
 
   function applyDefaultCamera() {
@@ -145,5 +151,9 @@ export function createScene(canvas) {
     });
   }
 
-  return { renderer, scene, camera, controls, start, resize, frame };
+  // 程式移動鏡頭（鏡頭動畫）不會觸發 OrbitControls 的 start 事件，由呼叫端明確標記，
+  // 否則 resize() 會把鏡頭拉回預設位置。動畫回到預設位置後以 false 重設。
+  function setUserMoved(v) { userMoved = !!v; }
+
+  return { renderer, scene, camera, controls, start, resize, frame, defaultPose, setUserMoved };
 }

@@ -16,3 +16,178 @@ body {
   touch-action: none;
   outline: none;
 }
+
+/* ---- 介面（淺色主題：教科書插畫旁的註解欄）---- */
+:root {
+  --ink: #34302A;
+  --ink-soft: #5B554B;
+  --ink-faint: #8A8274;
+  --glass: rgba(255, 255, 255, 0.82);
+  --line: rgba(80, 66, 40, 0.12);
+  --shadow: 0 8px 32px rgba(70, 58, 36, 0.14), 0 1px 3px rgba(70, 58, 36, 0.08);
+}
+
+#hover-name {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  pointer-events: none;
+  padding: 5px 11px;
+  border-radius: 8px;
+  background: rgba(52, 48, 42, 0.88);
+  color: #FBF9F4;
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(40, 32, 20, 0.22);
+}
+#hover-name[hidden] { display: none; }
+
+#panel {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 3;
+  box-sizing: border-box;
+  width: 340px;
+  max-height: calc(100vh - 32px - 168px); /* 底部留給構造清單 */
+  overflow-y: auto;
+  padding: 24px 24px 22px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.7;
+  scrollbar-width: thin;
+}
+#panel[hidden] { display: none; }
+#panel.shown { animation: panel-in 0.28s ease-out; }
+@keyframes panel-in {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: none; }
+}
+#panel .panel-head { display: flex; align-items: center; gap: 10px; padding-right: 30px; }
+#panel-dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.9), 0 0 0 4px var(--line);
+}
+#panel-title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.3;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+#panel-en {
+  margin: 2px 0 0 24px;
+  font-size: 14px;
+  line-height: 1.5;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+#panel-tagline {
+  margin: 16px 0 10px;
+  font-weight: 600;
+  color: #4A4234;
+}
+#panel-body { margin: 0; color: var(--ink-soft); }
+#panel-fact {
+  margin-top: 18px;
+  padding: 12px 16px 14px;
+  border-radius: 12px;
+  background: rgba(150, 128, 80, 0.09);
+}
+#panel-fact[hidden] { display: none; }
+#panel-fact .fact-label {
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  color: #8C7A52;
+}
+#panel-fact .fact-text { margin: 4px 0 0; color: var(--ink-soft); }
+#panel-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 22px;
+  line-height: 28px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+#panel-close:hover { background: rgba(80, 66, 40, 0.08); color: var(--ink); }
+
+#list-wrap {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  z-index: 2;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(90vw, 980px);
+  padding: 12px 16px 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+}
+#list-title {
+  margin: 0 0 8px 4px;
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 650;
+  letter-spacing: 0.18em;
+  color: var(--ink-faint);
+}
+#list { display: flex; flex-wrap: wrap; gap: 6px; }
+#list button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+#list button:hover { background: #fff; border-color: rgba(80, 66, 40, 0.25); }
+#list button .dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow: 0 0 0 1px rgba(60, 50, 30, 0.18);
+}
+#list button.active {
+  border-color: var(--c);
+  background: color-mix(in srgb, var(--c) 20%, #fff);
+  box-shadow: 0 0 0 1.5px var(--c), 0 2px 8px rgba(60, 50, 30, 0.12);
+  font-weight: 650;
+}
+#list.names-hidden button .label { display: none; }
+#list.names-hidden button { padding: 6px 8px; }

@@ -1,8 +1,17 @@
+import { Vector3 } from 'three';
 import modelBytes from '../../assets/plant_cell.glb';
 import palette from '../../shared/palette.json';
 import { createScene } from './scene.js';
-import { parseModel, indexModel, findOrganelle } from './model.js';
+import { parseModel, indexModel, findOrganelle, findInstanceRoot } from './model.js';
 import { applyMaterials } from './materials.js';
+import { ORGANELLES, getOrganelle } from './organelles.js';
+import { GHOST_IDS } from './config.js';
+import { createStore } from './state.js';
+import { createPicker } from './picking.js';
+import { createHighlighter } from './highlight.js';
+import { createCameraMoves } from './camera-moves.js';
+import { mountPanel } from './ui/panel.js';
+import { mountList } from './ui/list.js';
 
 const canvas = document.getElementById('stage');
 const root = document.documentElement;
@@ -25,10 +34,122 @@ async function main() {
   }, 0);
   const ids = [...new Set(meshes.map(findOrganelle).filter((x) => x !== null))];
 
+  // ---- 狀態與各個畫面：選取狀態只存在 store ----
+  const store = createStore();
+  const highlighter = createHighlighter(index);
+  const moves = createCameraMoves({
+    camera: view.camera, controls: view.controls,
+    defaultPose: view.defaultPose, setUserMoved: view.setUserMoved,
+  });
+  const panel = mountPanel(document.getElementById('panel'), {
+    palette, onClose: () => store.dispatch({ type: 'deselect' }),
+  });
+  const list = mountList(document.getElementById('list'), {
+    organelles: ORGANELLES, palette,
+    onSelect: (id) => store.dispatch({ type: 'select', id, inst: null }),
+  });
+  const hoverName = document.getElementById('hover-name');
+
+  const isPickable = (id) => {
+    const o = getOrganelle(id);
+    if (o && o.pickable === false) return false;
+    if (highlighter.shellsGhosted && GHOST_IDS.includes(id)) return false;
+    return true;
+  };
+
+  const picker = createPicker({
+    dom: canvas, camera: view.camera, index, isPickable,
+    onHover: (h) => store.dispatch(h ? { type: 'hover', id: h.id, inst: h.inst } : { type: 'unhover' }),
+    onPick: (h) => {
+      if (h) store.dispatch({ type: 'select', id: h.id, inst: h.inst });
+      else if (store.getState().selected) store.dispatch({ type: 'deselect' });
+    },
+  });
+
+  // #hover-name 跟著游標（右下 14 像素）
+  canvas.addEventListener('pointermove', (e) => {
+    hoverName.style.transform = `translate(${e.clientX + 14}px, ${e.clientY + 14}px)`;
+  });
+
+  let prev = { selected: undefined, hovered: undefined };
+  function render(s) {
+    highlighter.apply(s);
+    if (s.hovered !== prev.hovered) {
+      const o = s.hovered && getOrganelle(s.hovered.id);
+      hoverName.hidden = !o;
+      if (o) hoverName.textContent = o.zh;
+      canvas.style.cursor = o ? 'pointer' : '';
+    }
+    if (s.selected !== prev.selected) {
+      const sel = s.selected;
+      list.setActive(sel ? sel.id : null);
+      if (sel) {
+        panel.show(getOrganelle(sel.id));
+        const entry = index.byId.get(sel.id);
+        const target = sel.inst === null
+          ? (entry.anchor ?? entry.rep)
+          : entry.instances.find((r) => r.userData.inst === sel.inst) ?? entry.rep;
+        if (target) moves.focus(target);
+      } else {
+        panel.hide();
+        if (prev.selected) moves.home(); // 取消選取：鏡頭回到預設位置
+      }
+    }
+    prev = s;
+  }
+  store.subscribe(render);
+  render(store.getState());
+
+  // ---- 除錯與端對端測試用 ----
+  const projectToClient = (world) => {
+    view.camera.updateMatrixWorld();
+    const v = world.clone().project(view.camera);
+    const r = canvas.getBoundingClientRect();
+    return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height, z: v.z };
+  };
+
+  // 畫面上一個射線確實會打到該 id 的點（視窗 CSS 像素，可直接拿去點）；都被擋住就回 null。
+  function screenPointOf(id) {
+    const entry = index.byId.get(id);
+    if (!entry) return null;
+    model.updateMatrixWorld(true);
+    const w = new Vector3();
+    for (const inst of entry.instances) {
+      const cands = [inst.getWorldPosition(new Vector3())];
+      for (const m of entry.meshes) {
+        if (findInstanceRoot(m) !== inst) continue;
+        const pos = m.geometry.attributes.position;
+        const step = Math.max(1, Math.ceil(pos.count / 150));
+        for (let i = 0; i < pos.count; i += step) {
+          cands.push(w.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld).clone());
+        }
+      }
+      for (const c of cands) {
+        const p = projectToClient(c);
+        const x = Math.round(p.x);
+        const y = Math.round(p.y);
+        if (p.z < -1 || p.z > 1 || x < 4 || y < 4 || x > window.innerWidth - 4 || y > window.innerHeight - 4) continue;
+        if (document.elementFromPoint(x, y) !== canvas) continue;
+        const h = picker.hitAt(x, y);
+        if (h && h.id === id) return { x, y };
+      }
+    }
+    return null;
+  }
+
   const dts = [];
   window.__cell = {
     index,
     view, // 除錯與端對端測試用
+    store,
+    cameraBusy: () => moves.busy,
+    hitAt: (x, y) => picker.hitAt(x, y), // 與點選相同規則的射線測試
+    screenPointOf,
+    repScreenPoint(id) {
+      const entry = index.byId.get(id);
+      const p = projectToClient(entry.rep.getWorldPosition(new Vector3()));
+      return { x: p.x, y: p.y };
+    },
     stats() {
       const avg = dts.length ? dts.reduce((a, b) => a + b, 0) / dts.length : 0;
       return {
@@ -45,6 +166,8 @@ async function main() {
   view.start((dt) => {
     dts.push(dt);
     if (dts.length > 60) dts.shift();
+    moves.update(dt);
+    highlighter.update(dt);
     if (first) { first = false; root.dataset.cellReady = '1'; }
   });
 }
