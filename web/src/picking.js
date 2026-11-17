@@ -75,13 +75,20 @@ export function createPicker({ dom, camera, index, isPickable, onHover, onPick, 
     setPressed(false);
     const d = down;
     down = null;
-    if (!d || !isClick(d, { x: e.clientX, y: e.clientY })) return;
-    onPick(hitAt(e.clientX, e.clientY));
+    if (d && isClick(d, { x: e.clientX, y: e.clientY })) onPick(hitAt(e.clientX, e.clientY));
+    onUpHover(e);
+  };
+  // 放開後游標可能完全不動：立刻依放開位置重算滑過狀態（之後鏡頭滑行由 refresh 接手）
+  const onUpHover = (e) => {
+    if (e.pointerType === 'touch') return;
+    moveAt = { x: e.clientX, y: e.clientY };
+    emitHover(hitAt(moveAt.x, moveAt.y));
   };
   const onCancel = () => { down = null; setPressed(false); };
   const onMove = (e) => {
-    if (e.pointerType === 'touch' || e.buttons) return; // 觸控沒有滑過；拖曳中不做射線
-    moveAt = { x: e.clientX, y: e.clientY };
+    if (e.pointerType === 'touch') return; // 觸控沒有滑過
+    moveAt = { x: e.clientX, y: e.clientY }; // 拖曳中也持續記錄位置，放開時才有最新的游標位置可重算
+    if (e.buttons) return; // 拖曳中不做射線
     if (!raf) raf = requestAnimationFrame(flush); // 每個畫面最多射一次
   };
   const onLeave = () => {

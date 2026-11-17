@@ -336,3 +336,33 @@ test('鏡頭在動而游標不動時，滑過狀態跟著重算；拖曳中隱�
     await page.close();
   }
 });
+
+test('拖曳放開後游標不動，滑過狀態與名稱標籤等於放開位置底下的構造', async () => {
+  const page = await boot();
+  try {
+    await clickList(page, 'mitochondrion');
+    await settle(page);
+    const mito = await pointOf(page, 'mitochondrion');
+    await page.mouseMove(mito.x, mito.y);
+    await page.waitFor("window.__cell.store.getState().hovered?.id === 'mitochondrion' && !document.getElementById('hover-name').hidden");
+    // 在另一個構造上按下、拖曳、放開並保持不動（起點底下有構造，放開位置底下是別的東西或空白）
+    const start = await page.evaluate(`(() => {
+      for (let y = 40; y < innerHeight - 200; y += 20) for (let x = 40; x < innerWidth - 450; x += 20) {
+        if (Math.hypot(x - ${mito.x}, y - ${mito.y}) < 100 || !window.__cell.hitAt(x, y)) continue;
+        return { x, y, id: window.__cell.hitAt(x, y).id };
+      }
+      return null;
+    })()`);
+    assert.ok(start, '應找到起點有構造的拖曳');
+    await page.drag(start.x, start.y, start.x + 50, start.y);
+    await settle(page);
+    const truth = await page.evaluate(`window.__cell.hitAt(${start.x + 50}, ${start.y})`);
+    assert.notEqual(truth && truth.id, start.id, '放開位置底下不是起點的構造，這個斷言才有鑑別力');
+    const hovered = await page.evaluate('window.__cell.store.getState().hovered');
+    assert.deepEqual(hovered, truth, `放開後 hovered 應等於游標底下的構造，實際 ${JSON.stringify(hovered)}`);
+    assert.equal(await page.evaluate("document.getElementById('hover-name').hidden"), truth === null);
+    if (truth === null) assert.notEqual(await page.evaluate("getComputedStyle(document.getElementById('stage')).cursor"), 'pointer');
+  } finally {
+    await page.close();
+  }
+});
