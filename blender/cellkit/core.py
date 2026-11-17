@@ -1,8 +1,10 @@
-"""細胞核心：中央液泡、細胞核（含核孔、染色質）、核仁。
+"""細胞核心：中央液泡、細胞核（含核孔）、核仁、染色質、跨液泡細胞質絲。
 
 液泡：細胞內最大的構造。以立方體球（細分立方體再正規化）為底，沿橢球法向疊上低頻起伏，成為飽滿的水囊。
 細胞核：雙層厚度 0.08 的核膜球殼。朝鏡頭的八分之一（局部 x>0, y<0, z>0）用精確布林切開；
-        切面（核膜環與略為內凹的核質剖面）拆成獨立的 cut 物件。核孔與染色質各合併成一個網格。
+        切面（核膜環與略為內凹的核質剖面）拆成獨立的 cut 物件。核孔合併成一個網格。
+染色質：獨立的構造（自己的個體根），6 條細線合併成一個網格。
+細胞質絲：3 條穿過液泡的細管合併成一個網格，兩端張開接進細胞質。
 核仁：帶顆粒感的小球，位置偏離核心，從切口完整露出。
 """
 import math
@@ -459,9 +461,8 @@ def _build_nucleus(ctx, nuc_co):
         "main": _make_obj("nucleus_main", main_v, main_f),
         "cut": _make_obj("nucleus_cut", cut_v, cut_f),
         "pore": _make_obj("nucleus_pore", pore_v, pore_f),
-        "chromatin": _make_obj("nucleus_chromatin", chrom_v, cf),
     }
-    center = _bbox_center(main_v, cut_v, pore_v, chrom_v)
+    center = _bbox_center(main_v, cut_v, pore_v)
     root = C.new_instance("nucleus", center)
     for part, obj in objs.items():
         C.add_part(root, obj, part)
@@ -469,7 +470,171 @@ def _build_nucleus(ctx, nuc_co):
     arc = np.array((1.0, -1.0, 0.0)) / math.sqrt(2.0)
     anchor = NC + arc * (NR - SHELL_T / 2)
     C.add_anchor(root, tuple(anchor))
-    return center, tuple(anchor), pore_n
+    return center, tuple(anchor), pore_n, chrom_v, cf
+
+
+# ----------------------------------------------------------------------------
+# 染色質（獨立構造）
+# ----------------------------------------------------------------------------
+def _build_chromatin(chrom_v, chrom_f):
+    obj = _make_obj("chromatin_main", chrom_v, chrom_f)
+    center = _bbox_center(chrom_v)
+    root = C.new_instance("chromatin", center)
+    C.add_part(root, obj, "main")
+    # 錨點：所有染色質頂點中，沿鏡頭方向投影最大的那一個（朝鏡頭、從切口看得到的一段）
+    anchor = chrom_v[int(np.argmax(chrom_v @ _CAM))]
+    C.add_anchor(root, tuple(anchor))
+    return center, tuple(anchor)
+
+
+# ----------------------------------------------------------------------------
+# 跨液泡細胞質絲
+# ----------------------------------------------------------------------------
+STRAND_R_MID = 0.09
+STRAND_R_END = 0.16
+STRAND_FLARE = 0.35  # 兩端這麼長的範圍內半徑由中段半徑張開到端口半徑
+STRAND_SIDES = 12
+STRAND_STEP = 0.05  # 沿長度方向的分段長
+STRAND_OFFSET_MAX = 0.10
+STRAND_TRIM = 0.4  # 檢查「中段在液泡內」時，兩端各略去的長度
+STRAND_MIN_GAP = 0.2
+
+
+def _strand_path(i, rng):
+    """第 i 條絲的中心線 (N,3)、弧長 s (N,)、半徑 (N,)、最大橫向偏移。"""
+    near, far = (np.array(p) for p in C.strand_ends(i))
+    axis = far - near
+    length = float(np.linalg.norm(axis))
+    d = axis / length
+    helper = np.array((0.0, 0.0, 1.0)) if abs(d[2]) < 0.9 else np.array((1.0, 0.0, 0.0))
+    e1 = np.cross(d, helper)
+    e1 /= np.linalg.norm(e1)
+    e2 = np.cross(d, e1)
+    # 橫向偏移：兩端為 0 的 S 形（sin 2πt）加一點同樣兩端為 0 的單向鼓起（sin πt），隨機方向
+    ang = rng.uniform(0, 2 * math.pi)
+    lat = math.cos(ang) * e1 + math.sin(ang) * e2
+    lat2 = np.cross(d, lat)
+    a_s = rng.uniform(0.060, 0.080) * rng.choice([-1.0, 1.0])
+    a_b = rng.uniform(0.010, 0.025) * rng.choice([-1.0, 1.0])
+    n = int(round(length / STRAND_STEP)) + 1
+    t = np.linspace(0.0, 1.0, n)
+    off = (a_s * np.sin(2 * math.pi * t))[:, None] * lat + (a_b * np.sin(math.pi * t))[:, None] * lat2
+    path = near + t[:, None] * axis + off
+    seg = np.linalg.norm(np.diff(path, axis=0), axis=1)
+    s = np.concatenate([[0.0], np.cumsum(seg)])
+    from_end = np.minimum(s, s[-1] - s)
+    # 漏斗形：離端點越近張開得越快；在 0.35 處與中段管壁相切（斜率 0）
+    k = (1.0 - np.clip(from_end / STRAND_FLARE, 0.0, 1.0)) ** 2
+    radius = STRAND_R_MID + (STRAND_R_END - STRAND_R_MID) * k
+    return path, s, radius, float(np.max(np.linalg.norm(off, axis=1)))
+
+
+def _var_tube(path, radius, sides, cap_steps=(35.0, 65.0, 85.0), cap_h=0.05):
+    """半徑逐點變化的圓管，兩端以扁平的圓頂封口（突出量 cap_h，免得端口頂到空腔壁）。法向朝外。回傳 (頂點, 面, 每個頂點所屬的路徑索引)。"""
+    n = len(path)
+    tan = np.gradient(path, axis=0)
+    tan /= np.linalg.norm(tan, axis=1, keepdims=True)
+    helper = np.array((0.0, 0.0, 1.0)) if abs(tan[0][2]) < 0.9 else np.array((1.0, 0.0, 0.0))
+    nv = np.cross(tan[0], helper)
+    nv /= np.linalg.norm(nv)
+    frames = []
+    for i in range(n):
+        nv = nv - np.dot(nv, tan[i]) * tan[i]
+        nv /= np.linalg.norm(nv)
+        frames.append((nv.copy(), np.cross(tan[i], nv)))
+    ang = np.arange(sides) * 2 * math.pi / sides
+    caps = [math.radians(a) for a in cap_steps]
+    rings = []  # (圓心, 半徑, N, B, 路徑索引)
+    r0, r1 = radius[0], radius[-1]
+    for phi in reversed(caps):
+        rings.append((path[0] - tan[0] * cap_h * math.sin(phi), r0 * math.cos(phi), *frames[0], 0))
+    for i in range(n):
+        rings.append((path[i], radius[i], *frames[i], i))
+    for phi in caps:
+        rings.append((path[-1] + tan[-1] * cap_h * math.sin(phi), r1 * math.cos(phi), *frames[-1], n - 1))
+    pts, owner, faces = [], [], []
+    for c, rr, a, b, idx in rings:
+        for th in ang:
+            pts.append(c + rr * (math.cos(th) * a + math.sin(th) * b))
+            owner.append(idx)
+    m = len(rings)
+    for i in range(m - 1):
+        for k in range(sides):
+            k2 = (k + 1) % sides
+            faces.append([i * sides + k, i * sides + k2, (i + 1) * sides + k2, (i + 1) * sides + k])
+    p0 = len(pts)
+    pts.append(path[0] - tan[0] * cap_h)
+    pts.append(path[-1] + tan[-1] * cap_h)
+    owner += [0, n - 1]
+    for k in range(sides):
+        k2 = (k + 1) % sides
+        faces.append([p0, k2, k])
+        faces.append([(m - 1) * sides + k, (m - 1) * sides + k2, p0 + 1])
+    return np.array(pts), faces, np.array(owner)
+
+
+def _build_strands(ctx):
+    rng = np.random.default_rng(ctx.seed + 3)
+    ax = np.array(C.VACUOLE["axes"])
+    vc = np.array(C.VACUOLE["center"])
+    nz = np.array(C.NUCLEUS_ZONE["center"])
+    nz_r = C.NUCLEUS_ZONE["radius"]
+    per = []  # 每條：頂點
+    parts = []
+    stats = []
+    for i in range(3):
+        path, s, radius, off_max = _strand_path(i, rng)
+        v, f, owner = _var_tube(path, radius, STRAND_SIDES)
+        _check_closed_outward(f"細胞質絲 {i}", v, f)
+        if off_max > STRAND_OFFSET_MAX + 1e-9:
+            raise ValueError(f"細胞質絲 {i} 的橫向偏移 {off_max:.3f} 超過 {STRAND_OFFSET_MAX}")
+        # 中段（去掉兩端各 STRAND_TRIM）所有頂點要在液泡橢球內
+        sv = s[owner]
+        mid = (sv > STRAND_TRIM) & (sv < s[-1] - STRAND_TRIM)
+        level = np.linalg.norm((v[mid] - vc) / ax, axis=1)
+        mid_max = float(level.max())
+        if mid_max >= 1.0:
+            raise ValueError(f"細胞質絲 {i} 的中段有頂點在液泡橢球外：橢球值最大 {mid_max:.4f}")
+        sdf = C.cavity_sdf(v)
+        if float(sdf.max()) > -0.05:
+            raise ValueError(f"細胞質絲 {i} 有頂點離空腔邊界不足 0.05：餘裕 {-float(sdf.max()):.3f}")
+        dn = float(np.linalg.norm(v - nz, axis=1).min())
+        if dn <= nz_r:
+            raise ValueError(f"細胞質絲 {i} 進入細胞核禁入球：離核心最近 {dn:.3f} <= {nz_r}")
+        per.append(v)
+        parts.append((v, f))
+        stats.append((mid_max, -float(sdf.max()), dn, float(s[-1]), off_max, radius[0]))
+    gaps = []
+    for a in range(3):
+        for b in range(a + 1, 3):
+            dmin = min(
+                float(np.linalg.norm(per[a][k : k + 200, None, :] - per[b][None, :, :], axis=2).min())
+                for k in range(0, len(per[a]), 200)
+            )
+            gaps.append(dmin)
+            if dmin < STRAND_MIN_GAP:
+                raise ValueError(f"細胞質絲 {a} 與 {b} 的頂點太近：最近距離 {dmin:.3f} < {STRAND_MIN_GAP}")
+    sv_all, sf_all = _merge(parts)
+    obj = _make_obj("transvacuolar_strand_main", sv_all, sf_all)
+    center = _bbox_center(sv_all)
+    root = C.new_instance("transvacuolar_strand", center)
+    C.add_part(root, obj, "main")
+    # 錨點：第 0 條 near 端管子表面上、朝鏡頭方向的一點
+    near = np.array(C.strand_ends(0)[0])
+    t0 = np.array(C.strand_ends(0)[1]) - near
+    t0 /= np.linalg.norm(t0)
+    perp = _CAM - (_CAM @ t0) * t0
+    perp /= np.linalg.norm(perp)
+    anchor = near + perp * STRAND_R_END
+    C.add_anchor(root, tuple(anchor))
+    print(
+        "[core] 細胞質絲 " + "；".join(
+            f"#{i} 長 {st[3]:.2f} 橫向偏移 {st[4]:.3f} 中段橢球值最大 {st[0]:.3f} 空腔餘裕 {st[1]:.3f} 離核心最近 {st[2]:.3f}"
+            for i, st in enumerate(stats)
+        )
+        + f"；絲間最近距離 {tuple(round(g, 3) for g in gaps)}"
+    )
+    return center, tuple(anchor)
 
 
 # ----------------------------------------------------------------------------
@@ -512,8 +677,10 @@ def _build_nucleolus(co, f):
 def build(ctx):
     _vco, v_anchor, v_center = _build_vacuole(ctx)
     nuc_co, nuc_f = _nucleolus_geometry(ctx)
-    n_center, n_anchor, pore_n = _build_nucleus(ctx, nuc_co)
+    n_center, n_anchor, pore_n, chrom_v, chrom_f = _build_nucleus(ctx, nuc_co)
+    ch_center, ch_anchor = _build_chromatin(chrom_v, chrom_f)
     nu_center = _build_nucleolus(nuc_co, nuc_f)
+    st_center, st_anchor = _build_strands(ctx)
     tris = {
         o.name: _tri_count(o) for o in bpy.data.objects if o.type == "MESH"
     }
@@ -521,5 +688,7 @@ def build(ctx):
         f"[core] 三角面 {sum(tris.values())} {tris}；核孔 {pore_n}；"
         f"根 液泡 {tuple(np.round(v_center, 3))} 核 {tuple(np.round(n_center, 3))} "
         f"核仁 {tuple(np.round(nu_center, 3))}；錨點 液泡 {tuple(np.round(v_anchor, 3))} "
-        f"核 {tuple(np.round(n_anchor, 3))}"
+        f"核 {tuple(np.round(n_anchor, 3))}；"
+        f"根 染色質 {tuple(np.round(ch_center, 3))} 錨點 {tuple(np.round(ch_anchor, 3))}；"
+        f"根 細胞質絲 {tuple(np.round(st_center, 3))} 錨點 {tuple(np.round(st_anchor, 3))}"
     )
