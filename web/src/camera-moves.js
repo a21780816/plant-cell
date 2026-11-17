@@ -1,13 +1,11 @@
 import { Box3, Quaternion, Sphere, Vector3 } from 'three';
-import { findInstanceRoot, findOrganelle } from './model.js';
-import { GHOST_IDS } from './config.js';
+import { findInstanceRoot } from './model.js';
 
 const DURATION = 0.8;                       // 秒
 const easeOutCubic = (t) => 1 - (1 - t) ** 3; // 先快後慢
 const RADIUS_FACTOR = 4;
 const MIN_DIST = 3;
 const MAX_DIST = 14;
-const SHELL_DIST = 14;
 
 // 平順的鏡頭移動。保持當下的觀看方向（focus）或轉向預設方向（home），
 // 目標點、距離、方向各自內插；使用者一開始拖曳或滾輪（OrbitControls 的 start 事件）就中止。
@@ -32,10 +30,7 @@ export function createCameraMoves({ camera, controls, defaultPose = null, setUse
       const box = new Box3().setFromObject(root);
       if (!box.isEmpty()) radius = box.getBoundingSphere(new Sphere()).radius;
     }
-    const id = findOrganelle(object3d);
-    const dist = GHOST_IDS.includes(id)
-      ? SHELL_DIST
-      : Math.min(MAX_DIST, Math.max(MIN_DIST, radius * RADIUS_FACTOR));
+    const dist = Math.min(MAX_DIST, Math.max(MIN_DIST, radius * RADIUS_FACTOR));
     const dir = camera.position.clone().sub(controls.target).normalize();
     begin(() => ({ target, len: dist, dir }));
   }

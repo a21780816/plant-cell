@@ -97,10 +97,20 @@ export function createScene(canvas, { getLayout = null } = {}) {
   renderer.shadowMap.type = PCFShadowMap;
 
   const scene = new Scene();
-  const pmrem = new PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  // 環境光貼圖：three 在 WebGL context 恢復後不會重畫 PMREM 的內容（畫面會變暗），所以恢復時重新產生
+  const buildEnvironment = () => {
+    const pmrem = new PMREMGenerator(renderer);
+    const env = new RoomEnvironment();
+    const target = pmrem.fromScene(env, 0.04);
+    pmrem.dispose();
+    env.dispose();
+    const old = scene.environment;
+    scene.environment = target.texture;
+    if (old && old !== target.texture) old.dispose();
+  };
+  buildEnvironment();
   scene.environmentIntensity = 0.35;
-  pmrem.dispose();
+  canvas.addEventListener('webglcontextrestored', buildEnvironment);
 
   // 暖色主光（唯一投影的燈），從掀開那一角的斜上方照入。
   const key = new DirectionalLight(0xFFE6C8, 2.6);

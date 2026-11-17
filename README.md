@@ -13,10 +13,12 @@
 
 ```
 npm install        # 只有 three 與 esbuild 兩個套件
-npm run model      # 重建模型 assets/plant_cell.glb（需要 /Applications/Blender.app，只在改模型時需要）
+npm run model      # 產生模型 assets/plant_cell.glb（第一次建置或跑測試之前必做）
 npm run build      # 把程式、樣式、模型打包成 dist/plant-cell.html
 npm run dev        # 開發：監看檔案並在本機提供預覽
 ```
+模型檔 `assets/plant_cell.glb` 不在版本控制裡：第一次建置或跑測試之前要先執行 `npm run model`（需要安裝在
+`/Applications/Blender.app` 的 Blender 5.2.2）。重建是決定性的（固定亂數種子），每次產生的模型都一樣。
 
 ## 測試
 

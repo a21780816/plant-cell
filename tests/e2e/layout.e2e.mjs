@@ -302,6 +302,109 @@ for (const [W, H, layout] of [[722, 323, 'short'], [468, 798, 'narrow']]) {
   });
 }
 
+const setInnerWidth = (page, w) => page.evaluate(`(() => {
+  Object.defineProperty(window, 'innerWidth', { value: ${w}, configurable: true });
+  window.dispatchEvent(new Event('resize'));
+})()`);
+
+test('底部保留帶不受測驗與名稱隱藏影響：測驗中縮放視窗後壁不被蓋住，結束測驗後也不被清單蓋住', async () => {
+  const page = await open(1280, 800);
+  try {
+    await page.evaluate(COLLECT_WALL);
+    await startAndSettle(page);
+    const bottomAt = async () => (await page.evaluate('window.__cell.layout()')).rect.bottom;
+    const settled = async () => { await page.waitFor('!window.__cell.cameraBusy()', 5000); await frames(page); await sleep(300); };
+    const base = await bottomAt();
+    await setInnerWidth(page, 1240);
+    await frames(page);
+    const explore1240 = await bottomAt();
+    await setInnerWidth(page, 1280);
+    await frames(page);
+    assert.ok(Math.abs((await bottomAt()) - base) <= 1, '回到 1280 後保留帶相同');
+
+    await clickCenter(page, '#btn-quiz');
+    await page.waitFor("window.__cell.store.getState().phase === 'quiz'");
+    await settled();
+    assert.ok(Math.abs((await bottomAt()) - base) <= 1, `測驗中的保留帶應與探索相同：${await bottomAt()} vs ${base}`);
+    await setInnerWidth(page, 1240);
+    await frames(page);
+    await settled();
+    const quiz1240 = await bottomAt();
+    assert.ok(Math.abs(quiz1240 - explore1240) <= 1, `同寬度下測驗與探索的保留帶應相同：${quiz1240} vs ${explore1240}`);
+    const card = await info(page, '#quiz');
+    const wall = await page.evaluate(WALL_BOUNDS);
+    assert.ok(wall.bottom <= card.top + 0.5, `測驗卡片不可蓋住壁：壁下緣 ${wall.bottom}，卡片上緣 ${card.top}`);
+
+    await clickCenter(page, '#quiz-exit');
+    await page.waitFor("window.__cell.store.getState().phase === 'explore'");
+    await page.waitFor("getComputedStyle(document.getElementById('list-wrap')).opacity === '1'", 3000);
+    await settled();
+    const list = await info(page, '#list-wrap');
+    const wall2 = await page.evaluate(WALL_BOUNDS);
+    assert.ok(wall2.bottom <= list.top + 0.5, `結束測驗後清單不可蓋住壁：壁下緣 ${wall2.bottom}，清單上緣 ${list.top}`);
+    assert.deepEqual(page.consoleErrors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('narrow：鍵盤從清單選取後焦點移到關閉鈕，關閉後回到清單上那個構造的按鈕', async () => {
+  const page = await open(390, 800);
+  try {
+    await startAndSettle(page);
+    await page.evaluate("(() => { const b = document.querySelector('#list [data-id=\"nucleus\"]'); b.focus(); b.click(); })()");
+    await page.waitFor("window.__cell.store.getState().selected?.id === 'nucleus'");
+    assert.equal(await page.evaluate('document.activeElement.id'), 'panel-close', '選取後焦點應在 #panel-close');
+    await page.evaluate("document.getElementById('panel-close').click()");
+    await page.waitFor('window.__cell.store.getState().selected === null');
+    assert.equal(await page.evaluate("document.activeElement === document.querySelector('#list [data-id=\"nucleus\"]')"), true, '關閉後焦點應回到細胞核的清單按鈕');
+    assert.deepEqual(page.consoleErrors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('wide：從清單選取不搬動焦點', async () => {
+  const page = await open(1280, 800);
+  try {
+    await startAndSettle(page);
+    await page.evaluate("(() => { const b = document.querySelector('#list [data-id=\"nucleus\"]'); b.focus(); b.click(); })()");
+    await page.waitFor("window.__cell.store.getState().selected?.id === 'nucleus'");
+    assert.equal(await page.evaluate("document.activeElement === document.querySelector('#list [data-id=\"nucleus\"]')"), true);
+  } finally {
+    await page.close();
+  }
+});
+
+for (const [W, H, layout] of [[900, 420, 'short'], [390, 800, 'narrow']]) {
+  test(`測驗卡片遇到最長的答錯訊息（${W}×${H}，${layout}）：完整在視窗內、不蓋工具列、文字不被裁掉`, async () => {
+    const page = await open(W, H);
+    try {
+      await startAndSettle(page);
+      await clickCenter(page, '#btn-quiz');
+      await page.waitFor("window.__cell.store.getState().phase === 'quiz'");
+      await sleep(500);
+      await page.evaluate(`(() => {
+        const r = document.getElementById('quiz-result');
+        r.dataset.state = 'wrong';
+        r.textContent = '答錯了，你點的是粗糙內質網（扁囊狀）。發亮的才是平滑內質網（管狀）。';
+      })()`);
+      await frames(page);
+      const card = await info(page, '#quiz');
+      assert.ok(card.shown && inside(card, W, H), `測驗卡片應完整在視窗內：${JSON.stringify(card)}`);
+      assert.equal(overlaps(card, await info(page, '#toolbar')), false, '不與工具列重疊');
+      const fit = await page.evaluate("(() => { const r = document.getElementById('quiz-result'); return { sw: r.scrollWidth, cw: r.clientWidth, sh: r.scrollHeight, ch: r.clientHeight }; })()");
+      assert.ok(fit.sw <= fit.cw, `答錯訊息不可橫向被裁掉：${JSON.stringify(fit)}`);
+      // 卡片內所有子元素都在卡片的矩形內（不被裁、不溢出）
+      const kids = await page.evaluate(`[...document.querySelectorAll('#quiz > *')].filter((e) => e.getClientRects().length).map((e) => { const r = e.getBoundingClientRect(); return { id: e.id, left: r.left, top: r.top, right: r.right, bottom: r.bottom }; })`);
+      for (const k of kids) assert.ok(k.left >= card.left - 1 && k.right <= card.right + 1 && k.top >= card.top - 1 && k.bottom <= card.bottom + 1, `#${k.id} 應在卡片內：${JSON.stringify([k, card])}`);
+      await page.screenshot(`assets/preview/web-quiz-longest-${layout}.png`);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
 test('成品全文不含禁用詞', () => {
   const html = readFileSync('dist/plant-cell.html', 'utf8');
   for (const w of FORBIDDEN_WORDS) assert.ok(!html.includes(w), `成品含禁用詞：${w}`);

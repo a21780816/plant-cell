@@ -11,14 +11,15 @@ const DIM_MIX = 0.7;        // 其餘構造往 DIM_COLOR 靠近的比例
 const HOVER_DIM_MIX = 0.35; // 變暗的構造被滑過時，先退回到這個程度作為預覽
 const GHOST_MIX = 0.5;      // 殘影外殼的顏色往 DIM_COLOR 靠近的比例
 const GHOST_OPACITY = 0.15;
+const SELECTED_GHOST_OPACITY = 0.4; // 拆解時被選的外殼：比其他殘影清楚，但仍看得到裡面
 const TAU = 0.08;           // 指數趨近的時間常數；約 3 倍（0.25 秒）收斂
 
 const ROLE_TARGET = {
-  normal: () => ({ emi: 0, fade: 0, ghost: 0 }),
-  hover: (dimmed) => ({ emi: EMISSIVE.hover, fade: dimmed ? HOVER_DIM_MIX : 0, ghost: 0 }),
-  family: () => ({ emi: EMISSIVE.family, fade: 0, ghost: 0 }),
-  dim: () => ({ emi: 0, fade: DIM_MIX, ghost: 0 }),
-  ghost: () => ({ emi: 0, fade: GHOST_MIX, ghost: 1 }),
+  normal: () => ({ emi: 0, fade: 0, ghost: 0, lift: 0 }),
+  hover: (dimmed) => ({ emi: EMISSIVE.hover, fade: dimmed ? HOVER_DIM_MIX : 0, ghost: 0, lift: 0 }),
+  family: () => ({ emi: EMISSIVE.family, fade: 0, ghost: 0, lift: 0 }),
+  dim: () => ({ emi: 0, fade: DIM_MIX, ghost: 0, lift: 0 }),
+  ghost: () => ({ emi: 0, fade: GHOST_MIX, ghost: 1, lift: 0 }),
 };
 
 // 趨近目標；足夠接近時直接等於目標，收斂後的數值才精確（還原不留殘差）。
@@ -52,7 +53,7 @@ export function createHighlighter(index) {
         baseTransparent: mat.transparent,
         baseDepthWrite: mat.depthWrite,
         baseCast: mesh.castShadow,
-        cur: { emi: 0, fade: 0, ghost: 0 },
+        cur: { emi: 0, fade: 0, ghost: 0, lift: 0 },
         written: null,
       });
     }
@@ -79,8 +80,8 @@ export function createHighlighter(index) {
     let isSelected = false;
     if (sel) {
       if (rec.id === sel.id) {
-        // 拆解中選了外殼（只能從清單選）：它維持殘影、只微微發亮，否則放大的不透明外殼會把裡面全部遮住
-        if (state.exploded && rec.isShell) return { emi: EMISSIVE.family, fade: GHOST_MIX, ghost: 1 };
+        // 拆解中選了外殼（只能從清單選）：它維持半透明（不透明度約 0.35）並發亮，否則放大的不透明外殼會把裡面全部遮住
+        if (state.exploded && rec.isShell) return { emi: EMISSIVE.family + breath, fade: 0, ghost: 1, lift: 1 };
         if (sel.inst !== null && rec.inst === sel.inst) isSelected = true;
         else role = 'family';
       } else role = shellsGhosted && rec.isShell ? 'ghost' : 'dim';
@@ -102,7 +103,8 @@ export function createHighlighter(index) {
       mat.needsUpdate = true; // three 的 OPAQUE 著色器變體依 transparent 而定，翻轉時必須重編
     }
     mat.depthWrite = ghosting ? false : rec.baseDepthWrite;
-    mat.opacity = rec.baseOpacity + (Math.min(rec.baseOpacity, GHOST_OPACITY) - rec.baseOpacity) * cur.ghost;
+    const cap = GHOST_OPACITY + (SELECTED_GHOST_OPACITY - GHOST_OPACITY) * cur.lift;
+    mat.opacity = rec.baseOpacity + (Math.min(rec.baseOpacity, cap) - rec.baseOpacity) * cur.ghost;
     rec.mesh.renderOrder = ghosting && rec.ghostOrder !== null ? rec.ghostOrder : rec.baseOrder; // 殘影時固定由外到內的順序
     rec.mesh.castShadow = rec.baseCast && cur.ghost < 0.5; // 殘影不投影，否則看不見的外殼會把內部遮暗
   }
@@ -118,9 +120,10 @@ export function createHighlighter(index) {
       c.emi = approach(c.emi, t.emi, k);
       c.fade = approach(c.fade, t.fade, k);
       c.ghost = approach(c.ghost, t.ghost, k);
-      if (w && c.emi === w.emi && c.fade === w.fade && c.ghost === w.ghost) continue;
+      c.lift = approach(c.lift, t.lift, k);
+      if (w && c.emi === w.emi && c.fade === w.fade && c.ghost === w.ghost && c.lift === w.lift) continue;
       write(rec);
-      rec.written = { emi: c.emi, fade: c.fade, ghost: c.ghost };
+      rec.written = { emi: c.emi, fade: c.fade, ghost: c.ghost, lift: c.lift };
     }
   }
 

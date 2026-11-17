@@ -25,7 +25,7 @@ body {
 :root {
   --ink: #34302A;
   --ink-soft: #5B554B;
-  --ink-faint: #8A8274;
+  --ink-faint: #6E675B; /* 在玻璃底（約 #FBFAF8）上對比 5.4:1 */
   --glass: rgba(255, 255, 255, 0.82);
   --line: rgba(80, 66, 40, 0.12);
   --shadow: 0 8px 32px rgba(70, 58, 36, 0.14), 0 1px 3px rgba(70, 58, 36, 0.08);
@@ -115,7 +115,7 @@ body {
   line-height: 1.5;
   font-weight: 650;
   letter-spacing: 0.14em;
-  color: #8C7A52;
+  color: #6F5F3A; /* 對比 6.0:1 */
 }
 #panel-fact .fact-text { margin: 4px 0 0; color: var(--ink-soft); }
 #panel-close {
@@ -190,14 +190,15 @@ body {
   background: var(--c);
   box-shadow: 0 0 0 1px rgba(60, 50, 30, 0.18);
 }
+/* 測驗時隱藏名稱：看不見的偽元素佔住同樣的寬度，換行與清單高度都不變（取景的保留帶才不會在測驗中改變） */
+#list.names-hidden button .label { display: none; }
+#list.names-hidden button::after { content: attr(data-zh); visibility: hidden; }
 #list button.active {
   border-color: var(--c);
   background: color-mix(in srgb, var(--c) 20%, #fff);
   box-shadow: 0 0 0 1.5px var(--c), 0 2px 8px rgba(60, 50, 30, 0.12);
   font-weight: 650;
 }
-#list.names-hidden button .label { display: none; }
-#list.names-hidden button { padding: 4px 8px; }
 
 /* ---- 工具列（左上角；與清單、面板同一套玻璃質感）---- */
 #toolbar {
@@ -503,7 +504,7 @@ body:not([data-phase="explore"]) #labels { display: none; }
   text-align: center;
   font-size: 16px;
   letter-spacing: 0.3em;
-  color: var(--ink-faint);
+  color: var(--ink-soft); /* 疊在背景漸層上，用較深的色才有 4.5:1 */
   pointer-events: none;
 }
 #loading[hidden] { display: none; }
@@ -589,7 +590,6 @@ body[data-layout="narrow"] #list-wrap { overflow-y: auto; scrollbar-width: thin;
 body[data-layout="narrow"] #list-title { font-size: 13px; margin-bottom: 8px; }
 body[data-layout="narrow"] #list { gap: 6px; }
 body[data-layout="narrow"] #list button { padding: 6px 11px 6px 9px; font-size: 14px; }
-body[data-layout="narrow"] #list.names-hidden button { padding: 6px 8px; }
 body[data-layout="narrow"] #panel { padding: 18px 18px 16px; font-size: 15px; line-height: 1.65; }
 body[data-layout="narrow"] #panel-title { font-size: 22px; }
 body[data-layout="narrow"] #panel:not([hidden]) ~ #list-wrap { display: none; } /* 有選取時面板取代清單 */

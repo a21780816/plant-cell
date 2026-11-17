@@ -229,3 +229,87 @@ test('WebGL 不可用：顯示說明，不出現開場卡片與清單', async ()
     await page.close();
   }
 });
+
+test('模型解析失敗：顯示載入失敗的說明，不出現開場卡片、清單與工具列', async () => {
+  const page = await openPage('dist/plant-cell.html', {
+    offline: true,
+    initScript: "TextDecoder.prototype.decode = function () { throw new Error('測試用：解析失敗'); };",
+  });
+  try {
+    await page.waitFor(READY);
+    assert.ok(await page.evaluate('document.documentElement.dataset.cellError'), 'dataset.cellError 應有值');
+    assert.equal(await isShown(page, '#fallback'), true, '應顯示說明框');
+    const text = await page.evaluate("document.getElementById('fallback').textContent");
+    assert.equal(text, '模型載入失敗，請重新整理頁面再試一次。');
+    assert.equal(await isShown(page, '#loading'), false, '載入提示應隱藏');
+    for (const sel of ['#intro', '#list-wrap', '#toolbar']) assert.equal(await isShown(page, sel), false, `${sel} 不應顯示`);
+    assert.equal(await page.evaluate("document.documentElement.dataset.cellReady || ''"), '');
+  } finally {
+    await page.close();
+  }
+});
+
+// 畫面平均亮度（0 到 255）：在同一個工作內先繪製再把畫布縮小畫到不透明的白底上取平均
+const LUMINANCE = `(() => {
+  const { renderer, scene, camera } = window.__cell.view;
+  renderer.render(scene, camera);
+  const w = 160, h = 100;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.fillStyle = '#fff'; g.fillRect(0, 0, w, h);
+  g.drawImage(document.getElementById('stage'), 0, 0, w, h);
+  const d = g.getImageData(0, 0, w, h).data;
+  let sum = 0;
+  for (let i = 0; i < d.length; i += 4) sum += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+  return sum / (w * h);
+})()`;
+
+test('WebGL context 遺失再恢復：環境光貼圖重新產生，畫面亮度與遺失前一致', async () => {
+  const page = await boot();
+  try {
+    await clickStart(page);
+    await page.waitFor('window.__cell.lidOpen() === true', 3000);
+    await settleCamera(page);
+    await sleep(500);
+    await page.evaluate("window.__cell.view.setAutoRotate(false)");
+    const envBefore = await page.evaluate("(() => { window.__env0 = window.__cell.view.scene.environment; return true; })()");
+    assert.equal(envBefore, true);
+    const before = await page.evaluate(LUMINANCE);
+    await page.evaluate(`(() => {
+      const gl = window.__cell.view.renderer.getContext();
+      window.__lose = gl.getExtension('WEBGL_lose_context');
+      window.__restored = false;
+      document.getElementById('stage').addEventListener('webglcontextrestored', () => { window.__restored = true; });
+      window.__lose.loseContext();
+    })()`);
+    await sleep(300);
+    await page.evaluate('window.__lose.restoreContext()');
+    await page.waitFor('window.__restored === true', 5000);
+    await sleep(800);
+    await page.evaluate("window.__cell.view.setAutoRotate(false)");
+    const after = await page.evaluate(LUMINANCE);
+    const renewed = await page.evaluate('window.__cell.view.scene.environment !== window.__env0');
+    console.log('context 恢復亮度', JSON.stringify({ before: +before.toFixed(2), after: +after.toFixed(2), renewed }));
+    assert.ok(before > 20, `遺失前的畫面應有內容，亮度 ${before}`);
+    assert.ok(Math.abs(after / before - 1) < 0.03, `恢復後亮度應與遺失前相差不到 3%：${before.toFixed(2)} -> ${after.toFixed(2)}`);
+    assert.equal(renewed, true, '恢復後環境光貼圖應是新的物件');
+  } finally {
+    await page.close();
+  }
+});
+
+test('放開滑鼠也算使用者操作：自轉中放開滑鼠立刻停止自轉', async () => {
+  const page = await boot();
+  try {
+    await clickStart(page);
+    await page.waitFor('window.__cell.lidOpen() === true', 3000);
+    await page.waitFor('window.__cell.autoRotating() === true', 8000);
+    await page.evaluate("window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse' }))");
+    assert.equal(await page.evaluate('window.__cell.autoRotating()'), false, '放開滑鼠後應停止自轉');
+    await sleep(1500);
+    assert.equal(await page.evaluate('window.__cell.autoRotating()'), false, '放開後 4 秒內不應自轉');
+  } finally {
+    await page.close();
+  }
+});

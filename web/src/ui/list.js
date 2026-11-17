@@ -6,6 +6,7 @@ export function mountList(root, { organelles, palette, onSelect }) {
     const b = document.createElement('button');
     b.type = 'button';
     b.dataset.id = o.id;
+    b.dataset.zh = o.zh; // 測驗時名稱隱藏，CSS 用它的偽元素（看不見）佔住原本的寬度，清單的版面高度才不隨名稱顯示與否改變
     b.style.setProperty('--c', (palette[o.id] && palette[o.id].main) || '#B8B4AC');
     b.setAttribute('aria-pressed', 'false');
     const dot = document.createElement('span');
@@ -19,6 +20,10 @@ export function mountList(root, { organelles, palette, onSelect }) {
     buttons.set(o.id, { b, name: o.zh });
   }
   return {
+    focus(id) {
+      const e = buttons.get(id);
+      if (e) e.b.focus({ preventScroll: true });
+    },
     setActive(id) {
       for (const [bid, { b }] of buttons) {
         const on = bid === id;

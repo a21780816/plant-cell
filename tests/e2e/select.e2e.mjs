@@ -372,3 +372,136 @@ test('拖曳放開後游標不動，滑過狀態與名稱標籤等於放開位�
     await page.close();
   }
 });
+
+// ---- 最終審查的修正：外殼類構造的取景（F1）、Esc（F6）、名稱標籤位置（F8）----
+const SHELL4 = ['cell_wall', 'cell_membrane', 'cytoplasm', 'middle_lamella'];
+// 本細胞的壁（不含相鄰細胞）的頂點；開場後模型靜止時蒐集，之後用目前的鏡頭投影
+const COLLECT_WALL = `(() => {
+  const { index, view } = window.__cell;
+  view.scene.updateMatrixWorld(true);
+  const v = view.camera.position.clone();
+  const pts = [];
+  for (const m of index.byId.get('cell_wall').meshes) {
+    if (m.name.startsWith('neighbor')) continue;
+    const pos = m.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld); pts.push(v.x, v.y, v.z); }
+  }
+  window.__wallPts = pts;
+  return pts.length / 3;
+})()`;
+const boundsOf = (page, ptsExpr) => page.evaluate(`(() => {
+  const { view } = window.__cell;
+  view.camera.updateMatrixWorld();
+  const r = document.getElementById('stage').getBoundingClientRect();
+  const v = view.camera.position.clone();
+  let l = Infinity, t = Infinity, rt = -Infinity, b = -Infinity;
+  const p = ${ptsExpr};
+  for (let i = 0; i < p.length; i += 3) {
+    v.set(p[i], p[i + 1], p[i + 2]).project(view.camera);
+    const x = r.left + ((v.x + 1) / 2) * r.width, y = r.top + ((1 - v.y) / 2) * r.height;
+    if (x < l) l = x; if (x > rt) rt = x; if (y < t) t = y; if (y > b) b = y;
+  }
+  return { left: l, right: rt, top: t, bottom: b };
+})()`);
+const camDistance = (page) => page.evaluate('(() => { const { camera, controls } = window.__cell.view; return camera.position.distanceTo(controls.target); })()');
+const rectOf = (page, sel) => page.evaluate(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; })()`);
+const rectsOverlap = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+const within = (b, rect, eps = 1) => b.left >= rect.left - eps && b.right <= rect.right + eps && b.top >= rect.top - eps && b.bottom <= rect.bottom + eps;
+
+test('選取外殼類構造：鏡頭回到預設取景，本細胞的壁完整在可用範圍內；改選細胞核照常靠近', async () => {
+  const page = await boot();
+  try {
+    assert.ok((await page.evaluate(COLLECT_WALL)) > 50);
+    await settle(page);
+    const d0 = await camDistance(page);
+    for (const id of SHELL4) {
+      await clickList(page, id);
+      await page.waitFor(`window.__cell.store.getState().selected?.id === '${id}'`);
+      await settle(page);
+      const d = await camDistance(page);
+      const { rect } = await page.evaluate('window.__cell.layout()');
+      const b = await boundsOf(page, 'window.__wallPts');
+      assert.ok(Math.abs(d / d0 - 1) < 0.01, `${id}：鏡頭距離應等於預設距離 ${d0.toFixed(2)}，實際 ${d.toFixed(2)}`);
+      assert.ok(within(b, rect), `${id}：本細胞的壁應在可用範圍內：${JSON.stringify({ b, rect })}`);
+      assert.equal(rectsOverlap(await rectOf(page, '#panel'), await rectOf(page, '#list-wrap')), false, `${id}：面板不可蓋住清單`);
+      console.log('外殼選取', id, JSON.stringify({ dist: +d.toFixed(2), wall: [b.left, b.right, b.top, b.bottom].map(Math.round) }));
+      if (id === 'cell_wall') await page.screenshot('assets/preview/web-shell-selected.png');
+    }
+    await clickList(page, 'nucleus');
+    await page.waitFor("window.__cell.store.getState().selected?.id === 'nucleus'");
+    await settle(page);
+    const dn = await camDistance(page);
+    assert.ok(dn < d0 / 2, `改選細胞核：距離應小於預設距離的一半（${d0.toFixed(2)}），實際 ${dn.toFixed(2)}`);
+  } finally {
+    await page.close();
+  }
+});
+
+test('拆解狀態選細胞膜：看得到整個放大的外殼，被選的膜比其他外殼清楚', async () => {
+  const page = await boot();
+  try {
+    await page.waitFor("!document.getElementById('btn-explode').disabled");
+    const eb = await rectOf(page, '#btn-explode');
+    await page.click((eb.left + eb.right) / 2, (eb.top + eb.bottom) / 2);
+    await page.waitFor('window.__cell.explodeProgress() === 1', 5000);
+    await settle(page);
+    await clickList(page, 'cell_membrane');
+    await page.waitFor("window.__cell.store.getState().selected?.id === 'cell_membrane'");
+    await settle(page);
+    const { rect } = await page.evaluate('window.__cell.layout()');
+    const b = await boundsOf(page, 'window.__cell.shellFrameCorners()');
+    assert.ok(within(b, rect), `含外殼的完整拆解外框應在可用範圍內：${JSON.stringify({ b, rect })}`);
+    const st = await page.evaluate(`(() => {
+      const isLid = (m) => { for (let o = m; o; o = o.parent) if (o.userData && o.userData.lid === 1) return true; return false; };
+      const of = (id) => window.__cell.index.byId.get(id).meshes.filter((m) => !isLid(m)).map((m) => ({ op: m.material.opacity, e: m.material.emissiveIntensity }));
+      return { mem: of('cell_membrane'), others: ['cell_wall', 'middle_lamella', 'cytoplasm'].flatMap(of) };
+    })()`);
+    const memOp = Math.min(...st.mem.map((m) => m.op));
+    const memE = Math.min(...st.mem.map((m) => m.e));
+    assert.ok(memOp >= 0.3, `被選的膜不透明度應至少 0.3，實際 ${memOp}`);
+    assert.ok(st.others.every((m) => m.op <= 0.16), '其他外殼維持殘影');
+    assert.ok(memE > Math.max(...st.others.map((m) => m.e)), `被選的膜自發光應高於其他外殼：${memE} vs ${Math.max(...st.others.map((m) => m.e))}`);
+    console.log('拆解選膜', JSON.stringify({ dist: +(await camDistance(page)).toFixed(2), memOp, memE }));
+    await sleep(400);
+    await page.screenshot('assets/preview/web-shell-exploded.png');
+  } finally {
+    await page.close();
+  }
+});
+
+test('Esc 取消選取；沒有選取時按 Esc 沒有作用', async () => {
+  const page = await boot();
+  try {
+    const esc = () => page.evaluate("window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
+    await clickList(page, 'nucleus');
+    await page.waitFor("window.__cell.store.getState().selected?.id === 'nucleus'");
+    await esc();
+    assert.equal(await selected(page), null, '按 Esc 後應取消選取');
+    assert.equal(await page.evaluate("document.getElementById('panel').hidden"), true);
+    await esc();
+    assert.equal(await selected(page), null);
+    assert.deepEqual(page.consoleErrors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('不先移動滑鼠、直接按下放開：名稱標籤出現在按下的位置附近', async () => {
+  const page = await boot();
+  try {
+    const nuc = await pointOf(page, 'nucleus');
+    await page.evaluate(`(() => {
+      const c = document.getElementById('stage');
+      const o = { bubbles: true, clientX: ${nuc.x}, clientY: ${nuc.y}, pointerType: 'mouse', button: 0, isPrimary: true };
+      c.dispatchEvent(new PointerEvent('pointerdown', { ...o, buttons: 1 }));
+      c.dispatchEvent(new PointerEvent('pointerup', { ...o, buttons: 0 }));
+    })()`);
+    await page.waitFor("!document.getElementById('hover-name').hidden", 2000);
+    const r = await rectOf(page, '#hover-name');
+    const dx = Math.max(r.left - nuc.x, 0, nuc.x - r.right);
+    const dy = Math.max(r.top - nuc.y, 0, nuc.y - r.bottom);
+    assert.ok(Math.hypot(dx, dy) <= 60, `名稱標籤應在 (${nuc.x}, ${nuc.y}) 附近，實際矩形 ${JSON.stringify(r)}`);
+  } finally {
+    await page.close();
+  }
+});

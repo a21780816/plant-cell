@@ -25,6 +25,7 @@ const canvas = document.getElementById('stage');
 const root = document.documentElement;
 
 const FALLBACK_TEXT = '這個瀏覽器無法顯示 3D 內容，請改用新版的 Chrome 開啟。';
+const LOAD_FAIL_TEXT = '模型載入失敗，請重新整理頁面再試一次。';
 const IDLE_MS = 4000; // 使用者閒置這麼久才開始自轉
 const REVEAL_MS = 1800; // 測驗：作答後揭曉正確答案的時間
 const NARROW_W = 720; // 視窗寬度小於這個值是 narrow 版面
@@ -33,14 +34,14 @@ const NARROW_STAGE = 0.52; // narrow：畫布佔視窗高度的比例
 const EXPLODE_MOVE = { duration: 1, ease: easeInOutCubic }; // 拆解／組合時的鏡頭移動：與模型的伸縮同步，才不會在動畫中途被切出畫面
 
 // 建立 WebGL 失敗：只顯示說明（開場卡片與清單都不出現），並留下錯誤原因供除錯。
-function showFallback(e) {
+function showFallback(e, text = FALLBACK_TEXT, what = '無法建立 WebGL') {
   root.dataset.cellError = String(e && e.message ? e.message : e);
-  console.warn('[cell] 無法建立 WebGL', e);
+  console.warn(`[cell] ${what}`, e);
   document.getElementById('intro').hidden = true;
   const loadingEl = document.getElementById('loading');
   if (loadingEl) loadingEl.hidden = true;
   const box = document.getElementById('fallback');
-  box.textContent = FALLBACK_TEXT;
+  box.textContent = text;
   box.hidden = false;
 }
 
@@ -115,7 +116,13 @@ async function main() {
   const explodedBox = exploder.explodedBox(SCALE_IDS);
   const explodedFrame = { box: explodedBox, extent: exploder.explodedBox(), margin: 1.0, points: cornersOf(explodedBox) }; // 留白 1.0：散開的構造才能佔畫面寬度六成以上
   const restFrame = { box: wallBox, extent: index.box, margin: 1.04, points: wallPoints.length ? wallPoints : null };
+  // 拆解時選了外殼類構造：外殼是放大的，要看得到整個被選的外殼，所以改框含外殼的完整拆解範圍（不留白以外的空隙）。
+  const extentBox = exploder.explodedBox();
+  const shellFrame = { box: extentBox, extent: extentBox, margin: 1.04, points: cornersOf(extentBox) };
   const frameOf = (exploded) => (exploded ? explodedFrame : restFrame);
+  const isShellSel = (sel) => !!sel && GHOST_IDS.includes(sel.id);
+  // 目前狀態的預設取景：一般狀態是本細胞的壁；拆解且選了外殼是完整外框；拆解其餘是散開的構造
+  const frameFor = (s) => (s.exploded && isShellSel(s.selected) ? shellFrame : frameOf(s.exploded));
 
   view.frame(restFrame.box, restFrame.extent, restFrame.margin, restFrame.points);
 
@@ -131,14 +138,18 @@ async function main() {
   const moves = createCameraMoves({
     camera: view.camera, controls: view.controls,
     defaultPose: view.defaultPose, setUserMoved: view.setUserMoved,
-    applyDefault: () => { const f = frameOf(store.getState().exploded); return view.frame(f.box, f.extent, f.margin, f.points); }, // 回到預設後完整套用（含 maxDistance、far、陰影）並重設旗標
+    applyDefault: () => { const f = frameFor(store.getState()); return view.frame(f.box, f.extent, f.margin, f.points); }, // 回到預設後完整套用（含 maxDistance、far、陰影）並重設旗標
   });
   const panel = mountPanel(document.getElementById('panel'), {
     palette, onClose: () => store.dispatch({ type: 'deselect' }),
   });
   const list = mountList(document.getElementById('list'), {
     organelles: ORGANELLES, palette,
-    onSelect: (id) => store.dispatch({ type: 'select', id, inst: null }),
+    onSelect: (id) => {
+      store.dispatch({ type: 'select', id, inst: null });
+      // narrow：選取後清單被面板取代（display:none），焦點會掉回 body；移到面板的關閉鈕
+      if (layoutCtl.current.mode === 'narrow' && store.getState().selected) document.getElementById('panel-close').focus({ preventScroll: true });
+    },
   });
   view.resize(); // 清單有內容之後它的高度才是真的：重新計算可用範圍與取景
   const toolbar = mountToolbar(document.getElementById('toolbar'), {
@@ -233,10 +244,11 @@ async function main() {
     });
     hoverName.style.transform = `translate(${p.left}px, ${p.top}px)`;
   }
-  canvas.addEventListener('pointermove', (e) => {
-    pointer = { x: e.clientX, y: e.clientY };
-    if (!hoverName.hidden) placeLabel();
-  });
+  // 擷取階段先記下位置：picking.js 在 pointerup 與 refresh 時發出滑過狀態，標籤位置必須已是那個游標位置
+  for (const type of ['pointermove', 'pointerdown', 'pointerup']) {
+    canvas.addEventListener(type, (e) => { pointer = { x: e.clientX, y: e.clientY }; }, { capture: true, passive: true });
+  }
+  canvas.addEventListener('pointermove', () => { if (!hoverName.hidden) placeLabel(); });
   function paintHover() {
     const h = store.getState().hovered;
     const o = h && getOrganelle(h.id);
@@ -263,10 +275,15 @@ async function main() {
     lastActivity = performance.now();
     updateAutoRotate(); // 一操作就立刻停止自轉
   }
-  for (const type of ['pointerdown', 'wheel', 'keydown', 'touchstart']) {
+  for (const type of ['pointerdown', 'pointerup', 'wheel', 'keydown', 'touchstart', 'touchend']) {
     window.addEventListener(type, noteActivity, { capture: true, passive: true });
   }
   canvas.addEventListener('pointermove', noteActivity, { passive: true });
+  // Esc：探索階段有選取時等同取消選取（開場與測驗階段沒有作用）
+  window.addEventListener('keydown', (e) => {
+    const s = store.getState();
+    if (e.key === 'Escape' && s.phase === 'explore' && s.selected) store.dispatch({ type: 'deselect' });
+  });
 
   // 拆解動畫結束時，若有選取，鏡頭重新對準被選構造的新位置（使用者在中途自己動了鏡頭就不搶）
   let pendingRefocus = false;
@@ -300,12 +317,18 @@ async function main() {
     }
     if (s.phase !== prev.phase) paintHover();
     const explodeChanged = s.exploded !== prev.exploded;
+    const shellSel = isShellSel(s.selected);
     if (explodeChanged) {
       noteActivity();
       exploder.set(s.exploded);
-      { const f = frameOf(s.exploded); view.setFrameBox(f.box, f.extent, f.margin, f.points); } // 之後的預設位置（含取消選取、視窗縮放）以這個狀態的外框為準
-      if (s.selected) pendingRefocus = true;
-      else moves.home(EXPLODE_MOVE);
+    }
+    if (explodeChanged || (s.exploded && shellSel) !== (prev.exploded && isShellSel(prev.selected))) {
+      const f = frameFor(s);
+      view.setFrameBox(f.box, f.extent, f.margin, f.points); // 之後的預設位置（含取消選取、視窗縮放）以這個狀態的外框為準
+    }
+    if (explodeChanged) {
+      if (s.selected && !shellSel) pendingRefocus = true;
+      else moves.home(EXPLODE_MOVE); // 沒有選取，或選的是外殼（外殼用預設取景，不靠近錨點）
     }
     if (s.hovered !== prev.hovered) paintHover();
     if (s.selected !== prev.selected) {
@@ -315,11 +338,18 @@ async function main() {
       labels.setSelected(sel ? sel.id : null);
       if (sel) {
         panel.show(getOrganelle(sel.id));
-        const target = targetOf(sel);
-        if (target) moves.focus(target);
-        if (exploder.moving) pendingRefocus = true; // 動畫還沒結束，結束時再對準一次
+        if (shellSel) {
+          if (!explodeChanged) moves.home(); // 外殼類：鏡頭平順移到「看得到整個被選構造」的預設取景
+        } else {
+          const target = targetOf(sel);
+          if (target) moves.focus(target);
+          if (exploder.moving) pendingRefocus = true; // 動畫還沒結束，結束時再對準一次
+        }
       } else {
+        const focusInPanel = document.getElementById('panel').contains(document.activeElement);
         panel.hide();
+        // narrow：面板收起、清單回來；焦點原本在面板裡，就還給清單上對應那個構造的按鈕
+        if (focusInPanel && prev.selected && layoutCtl.current.mode === 'narrow') list.focus(prev.selected.id);
         if (prev.selected) moves.home(explodeChanged ? EXPLODE_MOVE : undefined); // 取消選取：鏡頭回到預設位置（同時在拆解／組合就用同一段動畫）
       }
     }
@@ -373,9 +403,10 @@ async function main() {
     store,
     layout: () => layoutCtl.current, // { mode, width, height, rect }：畫布大小與可用範圍
     frameCurrent() { // 以目前狀態（一般或拆解）的取景重新套用預設鏡頭
-      const f = frameOf(store.getState().exploded);
+      const f = frameFor(store.getState());
       return view.frame(f.box, f.extent, f.margin, f.points);
     },
+    shellFrameCorners: () => shellFrame.points.slice(), // 含外殼的完整拆解外框的八個角（攤平）
     cameraBusy: () => moves.busy,
     explodeProgress: () => exploder.progress,
     lidOpen: () => lid.isOpen,
@@ -411,7 +442,7 @@ async function main() {
     if (wasExploding && !exploder.moving && pendingRefocus) {
       pendingRefocus = false;
       const sel = store.getState().selected;
-      const target = sel && targetOf(sel);
+      const target = sel && !isShellSel(sel) ? targetOf(sel) : null; // 外殼類用預設取景，鏡頭動畫自己追著它
       if (target) moves.focus(target);
     }
     lid.update(dt);
@@ -427,9 +458,4 @@ async function main() {
   });
 }
 
-main().catch((e) => {
-  const loadingEl = document.getElementById('loading');
-  if (loadingEl) loadingEl.hidden = true;
-  root.dataset.cellError = String(e && e.message ? e.message : e);
-  console.warn('[cell] 載入失敗', e);
-});
+main().catch((e) => showFallback(e, LOAD_FAIL_TEXT, '載入失敗')); // 模型載入或解析失敗：開場、清單、工具列都不顯示（phase 不是 explore），只留說明
