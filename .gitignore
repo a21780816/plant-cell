@@ -5,3 +5,5 @@ assets/parts/
 assets/preview/
 .chrome-profile/
 .superpowers/
+__pycache__/
+*.pyc

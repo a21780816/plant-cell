@@ -42,6 +42,7 @@ PEROX_R = 0.2
 PEROX_WALL = 0.022
 
 ACCEPT_CORTEX = 1.24
+OVERSHOOT_TOLERANCE = 0.02  # 幾何超出碰撞半徑不大於此值視為「放不下」（換種子重建），更大則是幾何錯誤
 
 
 # ----------------------------------------------------------------------------
@@ -256,7 +257,10 @@ def _emit(oid, p, R, radius, pieces):
     world = {k: (W + shift, F) for k, (W, F) in world.items()}
     far = float(np.max(np.linalg.norm(allv - p, axis=1)))
     if far > radius + 1e-6:
-        raise C.PlacementError(f"{oid}：幾何超出碰撞半徑（{far:.4f} > {radius}）")
+        msg = f"{oid}：幾何超出碰撞半徑（{far:.4f} > {radius}，超出 {far - radius:.4f}）"
+        if far - radius <= OVERSHOOT_TOLERANCE:
+            raise C.PlacementError(msg)
+        raise ValueError(msg + f"，超過容許的 {OVERSHOOT_TOLERANCE}，視為幾何錯誤")
     root = C.new_instance(oid, tuple(float(x) for x in p))
     order = ["main", "cut"] + [k for k in world if k not in ("main", "cut")]
     for part in order:
