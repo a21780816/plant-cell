@@ -10,10 +10,13 @@ import { createStore } from './state.js';
 import { createPicker } from './picking.js';
 import { createHighlighter } from './highlight.js';
 import { createCameraMoves } from './camera-moves.js';
-import { createLid } from './lid.js';
+import { createLid, easeInOutCubic } from './lid.js';
+import { createExploder } from './explode.js';
+import { createLabels } from './labels.js';
 import { mountPanel } from './ui/panel.js';
 import { mountList } from './ui/list.js';
 import { mountIntro } from './ui/intro.js';
+import { mountToolbar } from './ui/toolbar.js';
 import { placeHoverName } from './ui/hover-name.js';
 
 const canvas = document.getElementById('stage');
@@ -21,6 +24,7 @@ const root = document.documentElement;
 
 const FALLBACK_TEXT = '這個瀏覽器無法顯示 3D 內容，請改用新版的 Chrome 開啟。';
 const IDLE_MS = 4000; // 使用者閒置這麼久才開始自轉
+const EXPLODE_MOVE = { duration: 1, ease: easeInOutCubic }; // 拆解／組合時的鏡頭移動：與模型的伸縮同步，才不會在動畫中途被切出畫面
 
 // 建立 WebGL 失敗：只顯示說明（開場卡片與清單都不出現），並留下錯誤原因供除錯。
 function showFallback(e) {
@@ -45,6 +49,9 @@ async function main() {
   applyMaterials(index, palette);
   view.scene.add(model);
   const lid = createLid(index); // 開場時蓋著；按下開始後掀開
+  const exploder = createExploder(index);
+  const explodedBox = exploder.explodedBox();
+  const boxFor = (exploded) => (exploded ? explodedBox : index.box); // 各狀態下「整個模型完整入鏡」的外框
 
   view.frame(index.box);
 
@@ -62,7 +69,7 @@ async function main() {
   const moves = createCameraMoves({
     camera: view.camera, controls: view.controls,
     defaultPose: view.defaultPose, setUserMoved: view.setUserMoved,
-    applyDefault: () => view.frame(index.box), // 回到預設後完整套用（含 maxDistance、far、陰影）並重設旗標
+    applyDefault: () => view.frame(boxFor(store.getState().exploded)), // 回到預設後完整套用（含 maxDistance、far、陰影）並重設旗標
   });
   const panel = mountPanel(document.getElementById('panel'), {
     palette, onClose: () => store.dispatch({ type: 'deselect' }),
@@ -71,6 +78,21 @@ async function main() {
     organelles: ORGANELLES, palette,
     onSelect: (id) => store.dispatch({ type: 'select', id, inst: null }),
   });
+  const toolbar = mountToolbar(document.getElementById('toolbar'), {
+    onExplode: () => store.dispatch({ type: 'toggleExplode' }),
+    onLabels: () => store.dispatch({ type: 'toggleLabels' }),
+  });
+  const labels = createLabels({
+    container: document.getElementById('labels'), index, camera: view.camera, palette,
+    nameOf: (id) => getOrganelle(id).zh,
+    onSelect: (id) => store.dispatch({ type: 'select', id, inst: null }),
+    obstacles: () => ['list-wrap', 'toolbar', 'panel'].map((n) => {
+      const el = document.getElementById(n);
+      return el && !el.hidden ? el.getBoundingClientRect() : null;
+    }),
+  });
+  // 標籤在每次繪製之前更新（此時鏡頭與模型矩陣都已是這一格要畫的狀態），才不會落後一格
+  view.scene.onBeforeRender = () => labels.update();
   const hoverName = document.getElementById('hover-name');
   const intro = mountIntro(document.getElementById('intro'), {
     intro: INTRO,
@@ -128,7 +150,7 @@ async function main() {
     const now = performance.now();
     const s = store.getState();
     if (lid.isOpen && openedAt === null) openedAt = now;
-    const want = s.phase === 'explore' && lid.isOpen && !s.selected && !moves.busy
+    const want = s.phase === 'explore' && lid.isOpen && !s.selected && !moves.busy && !exploder.moving
       && now - Math.max(lastActivity, openedAt) >= IDLE_MS;
     if (want !== view.isAutoRotating()) view.setAutoRotate(want);
   }
@@ -141,22 +163,40 @@ async function main() {
   }
   canvas.addEventListener('pointermove', noteActivity, { passive: true });
 
-  let prev = { selected: undefined, hovered: undefined };
+  // 拆解動畫結束時，若有選取，鏡頭重新對準被選構造的新位置（使用者在中途自己動了鏡頭就不搶）
+  let pendingRefocus = false;
+  view.controls.addEventListener('start', () => { pendingRefocus = false; });
+  const targetOf = (sel) => {
+    const entry = index.byId.get(sel.id);
+    return sel.inst === null
+      ? (entry.anchor ?? entry.rep)
+      : entry.instances.find((r) => r.userData.inst === sel.inst) ?? entry.rep;
+  };
+
+  let prev = { selected: undefined, hovered: undefined, exploded: false, labels: false };
   function render(s) {
     document.body.dataset.phase = s.phase; // 清單等介面依階段顯示（CSS）
     highlighter.apply(s);
+    toolbar.setState(s);
+    labels.setVisible(s.labels && s.phase === 'explore');
+    if (s.exploded !== prev.exploded) {
+      noteActivity();
+      exploder.set(s.exploded);
+      view.setFrameBox(boxFor(s.exploded)); // 之後的預設位置（含取消選取、視窗縮放）以這個狀態的外框為準
+      if (s.selected) pendingRefocus = true;
+      else moves.home(EXPLODE_MOVE);
+    }
     if (s.hovered !== prev.hovered) paintHover();
     if (s.selected !== prev.selected) {
       noteActivity();
       const sel = s.selected;
       list.setActive(sel ? sel.id : null);
+      labels.setSelected(sel ? sel.id : null);
       if (sel) {
         panel.show(getOrganelle(sel.id));
-        const entry = index.byId.get(sel.id);
-        const target = sel.inst === null
-          ? (entry.anchor ?? entry.rep)
-          : entry.instances.find((r) => r.userData.inst === sel.inst) ?? entry.rep;
+        const target = targetOf(sel);
         if (target) moves.focus(target);
+        if (exploder.moving) pendingRefocus = true; // 動畫還沒結束，結束時再對準一次
       } else {
         panel.hide();
         if (prev.selected) moves.home(); // 取消選取：鏡頭回到預設位置
@@ -210,6 +250,7 @@ async function main() {
     view, // 除錯與端對端測試用
     store,
     cameraBusy: () => moves.busy,
+    explodeProgress: () => exploder.progress,
     lidOpen: () => lid.isOpen,
     autoRotating: () => view.isAutoRotating(),
     hitAt: (x, y) => picker.hitAt(x, y), // 與點選相同規則的射線測試
@@ -237,6 +278,14 @@ async function main() {
     dts.push(dt);
     if (dts.length > 60) dts.shift();
     moves.update(dt);
+    const wasExploding = exploder.moving;
+    exploder.update(dt);
+    if (wasExploding && !exploder.moving && pendingRefocus) {
+      pendingRefocus = false;
+      const sel = store.getState().selected;
+      const target = sel && targetOf(sel);
+      if (target) moves.focus(target);
+    }
     lid.update(dt);
     highlighter.update(dt);
     updateAutoRotate();
@@ -244,7 +293,7 @@ async function main() {
     const me = view.camera.matrixWorld.elements;
     let moved = false;
     for (let i = 0; i < 16; i++) if (me[i] !== camSeen[i]) { moved = true; camSeen[i] = me[i]; }
-    if (moved) picker.refresh();
+    if (moved || exploder.moving) picker.refresh();
     if (first) { first = false; root.dataset.cellReady = '1'; }
   });
 }

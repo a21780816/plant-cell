@@ -106,16 +106,15 @@ export function createScene(canvas) {
     return dist;
   }
 
-  // 依模型外框推導預設鏡頭與主光陰影範圍；回傳鏡頭距離。呼叫即回到預設位置。
-  function frame(box) {
-    boxFramed = box.clone();
-    userMoved = false;
+  let lightHalf = 0;
+  // 依外框設定主光的陰影範圍；onlyGrow 為真時只放大不縮小。
+  function fitLight(box, onlyGrow) {
     const sphere = box.getBoundingSphere(new Sphere());
     const center = sphere.center;
     const radius = sphere.radius;
-    const dist = applyDefaultCamera();
-
     const half = radius * 1.1;          // 視錐半寬：罩住整個包圍球
+    if (onlyGrow && half <= lightHalf) return;
+    lightHalf = half;
     const lightDist = radius * 3;
     key.target.position.copy(center);
     key.position.copy(center).addScaledVector(keyDir, lightDist);
@@ -126,7 +125,27 @@ export function createScene(canvas) {
     sc.updateProjectionMatrix();
     key.shadow.radius = Math.max(2, 5 * (11 / half)); // 視錐變大時維持相近的世界尺度柔和度
     key.shadow.needsUpdate = true;
+  }
+
+  // 依模型外框推導預設鏡頭與主光陰影範圍；回傳鏡頭距離。呼叫即回到預設位置。
+  function frame(box) {
+    boxFramed = box.clone();
+    userMoved = false;
+    const dist = applyDefaultCamera();
+    fitLight(box, false);
     return dist;
+  }
+
+  // 只換「預設位置」依據的外框（鏡頭不動）：defaultPose() 與視窗縮放重新取景之後都以它為準。
+  // 拆解與組合切換時用：鏡頭由鏡頭動畫慢慢移過去，所以 maxDistance、far 與陰影範圍先只放大不縮小，
+  // 動畫結束後由 frame() 套用精確值。
+  function setFrameBox(box) {
+    boxFramed = box.clone();
+    const dist = defaultDistance();
+    controls.maxDistance = Math.max(controls.maxDistance, 36, dist * 1.8);
+    camera.far = Math.max(camera.far, 200, dist * 4 + box.getBoundingSphere(new Sphere()).radius * 2);
+    camera.updateProjectionMatrix();
+    fitLight(box, true);
   }
 
   function resize() {
@@ -164,7 +183,7 @@ export function createScene(canvas) {
   const isAutoRotating = () => controls.autoRotate;
 
   return {
-    renderer, scene, camera, controls, start, resize, frame, defaultPose, setUserMoved,
+    renderer, scene, camera, controls, start, resize, frame, setFrameBox, defaultPose, setUserMoved,
     setAutoRotate, isAutoRotating,
   };
 }

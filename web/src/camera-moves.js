@@ -16,10 +16,10 @@ const SHELL_DIST = 14;
 export function createCameraMoves({ camera, controls, defaultPose = null, setUserMoved = () => {}, applyDefault = null }) {
   let move = null;
 
-  function begin(resolveEnd, onDone) {
+  function begin(resolveEnd, onDone, opts = {}) {
     const target0 = controls.target.clone();
     const off0 = camera.position.clone().sub(target0);
-    move = { target0, len0: off0.length(), dir0: off0.clone().normalize(), resolveEnd, onDone, t: 0 };
+    move = { target0, len0: off0.length(), dir0: off0.clone().normalize(), resolveEnd, onDone, t: 0, duration: opts.duration ?? DURATION, ease: opts.ease ?? easeOutCubic };
     setUserMoved(true);
   }
 
@@ -40,20 +40,21 @@ export function createCameraMoves({ camera, controls, defaultPose = null, setUse
     begin(() => ({ target, len: dist, dir }));
   }
 
-  function home() {
+  // opts.duration / opts.ease：拆解與組合用較長的時間與對稱的緩動，才跟得上模型的伸縮（預設 0.8 秒、先快後慢）
+  function home(opts) {
     if (!defaultPose) return;
     begin(() => {
       const p = defaultPose();
       const off = p.position.clone().sub(p.target);
       return { target: p.target, len: off.length(), dir: off.normalize() };
-    }, () => (applyDefault ? applyDefault() : setUserMoved(false))); // 結束時完整套用預設鏡頭（含 maxDistance、far）
+    }, () => (applyDefault ? applyDefault() : setUserMoved(false)), opts); // 結束時完整套用預設鏡頭（含 maxDistance、far）
   }
 
   function update(dt) {
     if (!move) return;
     const m = move;
-    m.t = Math.min(1, m.t + dt / DURATION);
-    const e = easeOutCubic(m.t);
+    m.t = Math.min(1, m.t + dt / m.duration);
+    const e = m.ease(m.t);
     const end = m.resolveEnd();
     const q = new Quaternion().slerp(new Quaternion().setFromUnitVectors(m.dir0, end.dir), e);
     const dir = m.dir0.clone().applyQuaternion(q);

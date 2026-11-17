@@ -20,6 +20,10 @@ export function reduce(state, action) {
       return { ...state, selected: { id: action.id, inst: action.inst ?? null } };
     case 'deselect':
       return { ...state, selected: null };
+    case 'toggleExplode':
+      return { ...state, exploded: !state.exploded };
+    case 'toggleLabels':
+      return { ...state, labels: !state.labels };
     default:
       return state;
   }

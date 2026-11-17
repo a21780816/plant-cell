@@ -58,13 +58,14 @@ export function createHighlighter(index) {
     }
   }
 
-  let state = { selected: null, hovered: null };
+  let state = { selected: null, hovered: null, exploded: false };
   let shellsGhosted = false;
   let time = 0;
 
   function apply(next) {
     state = next;
-    shellsGhosted = next.selected !== null && !GHOST_IDS.includes(next.selected.id);
+    // 選了外殼以外的構造，或拆解中：外殼都變殘影（拆解時外殼是放大的殘影，不可點）
+    shellsGhosted = !!next.exploded || (next.selected !== null && !GHOST_IDS.includes(next.selected.id));
   }
 
   const same = (a, rec) => a && a.id === rec.id && (a.inst === null || a.inst === rec.inst);
@@ -75,10 +76,12 @@ export function createHighlighter(index) {
     let isSelected = false;
     if (sel) {
       if (rec.id === sel.id) {
+        // 拆解中選了外殼（只能從清單選）：它維持殘影、只微微發亮，否則放大的不透明外殼會把裡面全部遮住
+        if (state.exploded && rec.isShell) return { emi: EMISSIVE.family, fade: GHOST_MIX, ghost: 1 };
         if (sel.inst !== null && rec.inst === sel.inst) isSelected = true;
         else role = 'family';
       } else role = shellsGhosted && rec.isShell ? 'ghost' : 'dim';
-    }
+    } else if (shellsGhosted && rec.isShell) role = 'ghost';
     if (isSelected) return { emi: EMISSIVE.selected + breath, fade: 0, ghost: 0 };
     if ((role === 'normal' || role === 'dim') && same(hov, rec)) return ROLE_TARGET.hover(role === 'dim');
     return ROLE_TARGET[role]();

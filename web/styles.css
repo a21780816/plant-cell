@@ -192,10 +192,105 @@ body {
 #list.names-hidden button .label { display: none; }
 #list.names-hidden button { padding: 6px 8px; }
 
+/* ---- 工具列（左上角；與清單、面板同一套玻璃質感）---- */
+#toolbar {
+  position: fixed;
+  top: 56px;
+  left: 16px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+}
+#toolbar button {
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+#toolbar button:hover { background: #fff; border-color: rgba(80, 66, 40, 0.25); }
+#toolbar button.active {
+  border-color: #4E7352;
+  background: color-mix(in srgb, #4E7352 16%, #fff);
+  box-shadow: 0 0 0 1.5px #4E7352, 0 2px 8px rgba(60, 50, 30, 0.12);
+  font-weight: 650;
+}
+#toolbar button:focus-visible { outline: 3px solid rgba(78, 115, 82, 0.45); outline-offset: 2px; }
+
+/* ---- 名稱標籤：貼在構造上的小藥丸；容器不攔截滑鼠，只有標籤攔截 ---- */
+#labels {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  animation: labels-in 0.25s ease-out;
+}
+#labels[hidden] { display: none; }
+@keyframes labels-in { from { opacity: 0; } to { opacity: 1; } }
+#labels .label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  padding: 2px 9px 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+  will-change: transform;
+  box-shadow: 0 1px 4px rgba(60, 50, 30, 0.12);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+#labels .label[hidden] { display: none; }
+#labels .label:hover { background: #fff; border-color: rgba(80, 66, 40, 0.3); }
+#labels .label .dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow: 0 0 0 1px rgba(60, 50, 30, 0.18);
+}
+#labels .label.selected {
+  z-index: 1;
+  border-color: var(--c);
+  background: color-mix(in srgb, var(--c) 22%, #fff);
+  box-shadow: 0 0 0 1.5px var(--c), 0 2px 8px rgba(60, 50, 30, 0.18);
+  font-weight: 650;
+}
+
 /* ---- 開場 ---- */
 /* 開場時構造清單不顯示；進入探索後淡入（沒有 3D 時 data-phase 不會變成 explore，清單一直不顯示） */
-#list-wrap { transition: opacity 0.5s ease, visibility 0s; }
-body:not([data-phase="explore"]) #list-wrap { opacity: 0; visibility: hidden; pointer-events: none; }
+#list-wrap, #toolbar { transition: opacity 0.5s ease, visibility 0s; }
+body:not([data-phase="explore"]) #list-wrap,
+body:not([data-phase="explore"]) #toolbar { opacity: 0; visibility: hidden; pointer-events: none; }
+body:not([data-phase="explore"]) #labels { display: none; }
 
 #intro {
   position: fixed;

@@ -83,3 +83,25 @@ test('subscribe 的函式在 dispatch 後被呼叫一次，unsubscribe 後不再
   assert.equal(calls, 1);
   assert.equal(store.getState().selected, null);
 });
+
+test('toggleExplode 與 toggleLabels 各切換一次（先 start）', () => {
+  assert.equal(explore.exploded, false);
+  assert.equal(explore.labels, false);
+  const a = reduce(explore, { type: 'toggleExplode' });
+  assert.equal(a.exploded, true);
+  assert.equal(a.labels, false);
+  assert.equal(reduce(a, { type: 'toggleExplode' }).exploded, false);
+  const b = reduce(explore, { type: 'toggleLabels' });
+  assert.equal(b.labels, true);
+  assert.equal(b.exploded, false);
+  assert.equal(reduce(b, { type: 'toggleLabels' }).labels, false);
+  assert.equal(explore.exploded, false, '不改動傳入的狀態');
+});
+
+test('toggleExplode 與 toggleLabels 不影響選取；intro 階段無效', () => {
+  const sel = reduce(explore, { type: 'select', id: 'nucleus', inst: 0 });
+  const t = reduce(reduce(sel, { type: 'toggleExplode' }), { type: 'toggleLabels' });
+  assert.deepEqual(t.selected, { id: 'nucleus', inst: 0 });
+  assert.equal(reduce(initialState, { type: 'toggleExplode' }), initialState);
+  assert.equal(reduce(initialState, { type: 'toggleLabels' }), initialState);
+});
