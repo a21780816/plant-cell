@@ -283,9 +283,13 @@ def _build_pores(rot):
     return v, f, len(dirs)
 
 
-def _tube(path, r, sides=6, cap_steps=(35.0, 65.0, 85.0)):
-    """沿 path (N,3) 的圓管，兩端以近似半球收口。回傳 (頂點, 面)，法向朝外。"""
+def _tube(path, r, sides=6, cap_steps=(35.0, 65.0, 85.0), cap_h=None):
+    """沿 path (N,3) 的圓管。r 為純量或逐點半徑 (N,)。
+    兩端依 cap_steps（各環的仰角，度）以圓頂收口，突出量 cap_h（None 時等於該端的半徑，即近似半球）；
+    cap_steps 為空且 cap_h=0 時端面是一個平的圓面，圓心就在路徑端點上。
+    回傳 (頂點, 面, 每個頂點所屬的路徑索引)，法向朝外。"""
     n = len(path)
+    radius = np.broadcast_to(np.asarray(r, dtype=float), (n,))
     tan = np.gradient(path, axis=0)
     tan /= np.linalg.norm(tan, axis=1, keepdims=True)
     helper = np.array((0.0, 0.0, 1.0)) if abs(tan[0][2]) < 0.9 else np.array((1.0, 0.0, 0.0))
@@ -297,31 +301,36 @@ def _tube(path, r, sides=6, cap_steps=(35.0, 65.0, 85.0)):
         nv /= np.linalg.norm(nv)
         frames.append((nv.copy(), np.cross(tan[i], nv)))
     ang = np.arange(sides) * 2 * math.pi / sides
-    rings = []  # (圓心, 半徑, N, B)
     caps = [math.radians(a) for a in cap_steps]
+    r0, r1 = float(radius[0]), float(radius[-1])
+    h0 = r0 if cap_h is None else cap_h
+    h1 = r1 if cap_h is None else cap_h
+    rings = []  # (圓心, 半徑, N, B, 路徑索引)
     for phi in reversed(caps):
-        rings.append((path[0] - tan[0] * r * math.sin(phi), r * math.cos(phi), *frames[0]))
+        rings.append((path[0] - tan[0] * h0 * math.sin(phi), r0 * math.cos(phi), *frames[0], 0))
     for i in range(n):
-        rings.append((path[i], r, *frames[i]))
+        rings.append((path[i], radius[i], *frames[i], i))
     for phi in caps:
-        rings.append((path[-1] + tan[-1] * r * math.sin(phi), r * math.cos(phi), *frames[-1]))
-    pts, faces = [], []
-    for c, rr, a, b in rings:
+        rings.append((path[-1] + tan[-1] * h1 * math.sin(phi), r1 * math.cos(phi), *frames[-1], n - 1))
+    pts, owner, faces = [], [], []
+    for c, rr, a_, b_, idx in rings:
         for t in ang:
-            pts.append(c + rr * (math.cos(t) * a + math.sin(t) * b))
+            pts.append(c + rr * (math.cos(t) * a_ + math.sin(t) * b_))
+            owner.append(idx)
     m = len(rings)
     for i in range(m - 1):
         for k in range(sides):
             k2 = (k + 1) % sides
             faces.append([i * sides + k, i * sides + k2, (i + 1) * sides + k2, (i + 1) * sides + k])
     p0 = len(pts)
-    pts.append(path[0] - tan[0] * r)
-    pts.append(path[-1] + tan[-1] * r)
+    pts.append(path[0] - tan[0] * h0)
+    pts.append(path[-1] + tan[-1] * h1)
+    owner += [0, n - 1]
     for k in range(sides):
         k2 = (k + 1) % sides
         faces.append([p0, k2, k])
         faces.append([(m - 1) * sides + k, (m - 1) * sides + k2, p0 + 1])
-    return np.array(pts), faces
+    return np.array(pts), faces, np.array(owner)
 
 
 _CAM = np.array(C.CAMERA_DIR, dtype=float) / np.linalg.norm(C.CAMERA_DIR)
@@ -441,7 +450,7 @@ def _build_nucleus(ctx, nuc_co):
         raise ValueError(f"核仁被核質剖面遮住或太近：與三個剖面的最小間隙 {gaps}")
     cv, cf = [], []
     for _ in range(6):
-        v, f = _tube(_chromatin_path(rng, nuc_c, rmax), 0.03)
+        v, f, _ = _tube(_chromatin_path(rng, nuc_c, rmax), 0.03)
         _check_closed_outward("染色質", v, f)
         cf += [[i + len(cv) for i in q] for q in f]
         cv += v.tolist()
@@ -492,7 +501,7 @@ def _build_chromatin(chrom_v, chrom_f):
 # ----------------------------------------------------------------------------
 STRAND_R_MID = 0.09
 STRAND_R_END = 0.16
-STRAND_FLARE = 0.35  # 兩端這麼長的範圍內半徑由中段半徑張開到端口半徑
+STRAND_FLARE = 0.6  # 兩端這麼長的範圍內半徑由中段半徑張開到端口半徑
 STRAND_SIDES = 12
 STRAND_STEP = 0.05  # 沿長度方向的分段長
 STRAND_OFFSET_MAX = 0.10
@@ -523,54 +532,10 @@ def _strand_path(i, rng):
     seg = np.linalg.norm(np.diff(path, axis=0), axis=1)
     s = np.concatenate([[0.0], np.cumsum(seg)])
     from_end = np.minimum(s, s[-1] - s)
-    # 漏斗形：離端點越近張開得越快；在 0.35 處與中段管壁相切（斜率 0）
+    # 漏斗形：離端點越近張開得越快；在 STRAND_FLARE 處與中段管壁相切（斜率 0）
     k = (1.0 - np.clip(from_end / STRAND_FLARE, 0.0, 1.0)) ** 2
     radius = STRAND_R_MID + (STRAND_R_END - STRAND_R_MID) * k
     return path, s, radius, float(np.max(np.linalg.norm(off, axis=1)))
-
-
-def _var_tube(path, radius, sides, cap_steps=(35.0, 65.0, 85.0), cap_h=0.05):
-    """半徑逐點變化的圓管，兩端以扁平的圓頂封口（突出量 cap_h，免得端口頂到空腔壁）。法向朝外。回傳 (頂點, 面, 每個頂點所屬的路徑索引)。"""
-    n = len(path)
-    tan = np.gradient(path, axis=0)
-    tan /= np.linalg.norm(tan, axis=1, keepdims=True)
-    helper = np.array((0.0, 0.0, 1.0)) if abs(tan[0][2]) < 0.9 else np.array((1.0, 0.0, 0.0))
-    nv = np.cross(tan[0], helper)
-    nv /= np.linalg.norm(nv)
-    frames = []
-    for i in range(n):
-        nv = nv - np.dot(nv, tan[i]) * tan[i]
-        nv /= np.linalg.norm(nv)
-        frames.append((nv.copy(), np.cross(tan[i], nv)))
-    ang = np.arange(sides) * 2 * math.pi / sides
-    caps = [math.radians(a) for a in cap_steps]
-    rings = []  # (圓心, 半徑, N, B, 路徑索引)
-    r0, r1 = radius[0], radius[-1]
-    for phi in reversed(caps):
-        rings.append((path[0] - tan[0] * cap_h * math.sin(phi), r0 * math.cos(phi), *frames[0], 0))
-    for i in range(n):
-        rings.append((path[i], radius[i], *frames[i], i))
-    for phi in caps:
-        rings.append((path[-1] + tan[-1] * cap_h * math.sin(phi), r1 * math.cos(phi), *frames[-1], n - 1))
-    pts, owner, faces = [], [], []
-    for c, rr, a, b, idx in rings:
-        for th in ang:
-            pts.append(c + rr * (math.cos(th) * a + math.sin(th) * b))
-            owner.append(idx)
-    m = len(rings)
-    for i in range(m - 1):
-        for k in range(sides):
-            k2 = (k + 1) % sides
-            faces.append([i * sides + k, i * sides + k2, (i + 1) * sides + k2, (i + 1) * sides + k])
-    p0 = len(pts)
-    pts.append(path[0] - tan[0] * cap_h)
-    pts.append(path[-1] + tan[-1] * cap_h)
-    owner += [0, n - 1]
-    for k in range(sides):
-        k2 = (k + 1) % sides
-        faces.append([p0, k2, k])
-        faces.append([(m - 1) * sides + k, (m - 1) * sides + k2, p0 + 1])
-    return np.array(pts), faces, np.array(owner)
 
 
 def _build_strands(ctx):
@@ -584,7 +549,7 @@ def _build_strands(ctx):
     stats = []
     for i in range(3):
         path, s, radius, off_max = _strand_path(i, rng)
-        v, f, owner = _var_tube(path, radius, STRAND_SIDES)
+        v, f, owner = _tube(path, radius, STRAND_SIDES, cap_steps=(), cap_h=0.0)
         _check_closed_outward(f"細胞質絲 {i}", v, f)
         if off_max > STRAND_OFFSET_MAX + 1e-9:
             raise ValueError(f"細胞質絲 {i} 的橫向偏移 {off_max:.3f} 超過 {STRAND_OFFSET_MAX}")
