@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "cell-dev",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/build.mjs", "--watch", "--serve"],
+      "port": 5173
+    }
+  ]
+}
