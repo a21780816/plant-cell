@@ -30,8 +30,9 @@ SHEET_H = 0.025  # 薄片半厚（總厚 0.05）
 RER_PHI_N = 72
 RER_RHO_N = 16
 RER_RIM_N = 5
-EDGE_MAX = 1.445  # 邊緣最大極角；加上圓邊後仍小於 acos(RER['min_dot'])
+EDGE_MAX = math.acos(C.RER["min_dot"]) - 0.025  # 邊緣最大極角，留圓邊與波浪的餘裕
 RIB_R = 0.045
+RIB_NUC_MIN = 1.20 + 0.056  # 球心距核心下限：加上最大球半徑（0.045 x 1.07 x 1.06 約 0.051）後仍 >= 1.20
 VAC_PAD = 0.10  # 液泡表面起伏上限
 
 
@@ -380,19 +381,15 @@ def _make_holes(layer, rng, count):
         t2 = np.cross(n, t)
         m = [rng.uniform(0, TWO_PI) for _ in range(2)]
         # 輪廓取樣，檢查不碰邊、不碰極點、不與其他孔重疊
-        a = np.linspace(0, TWO_PI, 24, endpoint=False)
-        rr = rad * (1 + 0.09 * np.sin(2 * a + m[0]) + 0.05 * np.sin(3 * a + m[1]))
-        loc = np.stack([rr * np.cos(a), ratio * rr * np.sin(a)], axis=1)
-        cr, sr = math.cos(rot), math.sin(rot)
-        loc = loc @ np.array([[cr, sr], [-sr, cr]])
-        ring = p + loc[:, :1] * t + loc[:, 1:] * t2
+        cand = {"p": p, "n": n, "t": t, "t2": t2, "rad": rad, "ratio": ratio, "rot": rot, "m": m, "r0": layer.r0}
+        ring = _hole_ring(cand)
         d = _unit_rows(ring - NC)
         tt, pp = _to_thph(d)
         if np.any(tt > layer.edge(pp) - 0.09) or np.any(tt < 0.12):
             continue
         if any(np.linalg.norm(p - h["p"]) < rad * 1.1 + h["rad"] * 1.1 + 0.10 for h in holes):
             continue
-        holes.append({"p": p, "n": n, "t": t, "t2": t2, "rad": rad, "ratio": ratio, "rot": rot, "m": m})
+        holes.append(cand)
     if len(holes) < count:
         raise ValueError(f"粗糙內質網第 {layer.k} 層只挖得出 {len(holes)} 個孔（要 {count} 個）")
     return holes
@@ -402,19 +399,32 @@ def _unit_rows(v):
     return v / np.linalg.norm(v, axis=-1, keepdims=True)
 
 
+HOLE_SIDES = 24
+HOLE_HALF = 0.16  # 切刀沿徑向的半高：遠大於薄片半厚加皺褶起伏（約 0.025 + 0.05）
+
+
+def _hole_ring(h):
+    """孔洞輪廓：在孔中心的切平面上取 HOLE_SIDES 個點（略不規則的橢圓）。
+    碰撞檢查與切刀都用這一份，兩邊才不會失去同步。"""
+    a = np.arange(HOLE_SIDES) * TWO_PI / HOLE_SIDES
+    rr = h["rad"] * (1 + 0.09 * np.sin(2 * a + h["m"][0]) + 0.05 * np.sin(3 * a + h["m"][1]))
+    loc = np.stack([rr * np.cos(a), h["ratio"] * rr * np.sin(a)], axis=1)
+    cr, sr = math.cos(h["rot"]), math.sin(h["rot"])
+    loc = loc @ np.array([[cr, sr], [-sr, cr]])
+    return h["p"] + loc[:, :1] * h["t"] + loc[:, 1:] * h["t2"]
+
+
 def _hole_cutter(holes):
+    """切刀的側壁沿「由細胞核中心射出的徑向」，不論薄片多彎、皺褶多深都會切穿。"""
     parts = []
-    half = 0.11
-    sides = 24
+    sides = HOLE_SIDES
     for h in holes:
-        a = np.arange(sides) * TWO_PI / sides
-        rr = h["rad"] * (1 + 0.09 * np.sin(2 * a + h["m"][0]) + 0.05 * np.sin(3 * a + h["m"][1]))
-        loc = np.stack([rr * np.cos(a), h["ratio"] * rr * np.sin(a)], axis=1)
-        cr, sr = math.cos(h["rot"]), math.sin(h["rot"])
-        loc = loc @ np.array([[cr, sr], [-sr, cr]])
-        ring = h["p"] + loc[:, :1] * h["t"] + loc[:, 1:] * h["t2"]
-        v = [h["p"] + h["n"] * half, h["p"] - h["n"] * half]
-        v += list(ring + h["n"] * half) + list(ring - h["n"] * half)
+        ring = _hole_ring(h)
+        d = _unit_rows(ring - NC)
+        dc = _unit(h["p"] - NC)
+        r0 = h["r0"]
+        v = [NC + (r0 + HOLE_HALF) * dc, NC + (r0 - HOLE_HALF) * dc]
+        v += list(NC + (r0 + HOLE_HALF) * d) + list(NC + (r0 - HOLE_HALF) * d)
         f = []
         for k in range(sides):
             k2 = (k + 1) % sides
@@ -443,8 +453,8 @@ def _cut_holes(solid, holes):
 # ----------------------------------------------------------------------------
 _RIB_PLAN = [
     # (層, 面 +1 朝外 / -1 朝內, 顆數, 離表面的高度)
+    (0, -1, 60, 0.028),  # 最靠細胞核的一面：淨空不足的地方放不下，差額由下一列（最外層朝外）補
     (3, +1, 200, 0.030),
-    (0, -1, 60, 0.028),
     (0, +1, 80, -0.004),
     (1, +1, 80, -0.004),
     (2, +1, 80, -0.004),
@@ -455,7 +465,10 @@ def _attached_ribosomes(layers, holes_by_layer, rng):
     """回傳 [(中心, 層, rho)]。"""
     out = []
     cos_max = math.cos(EDGE_MAX)
+    carry = 0
     for k, side, count, off in _RIB_PLAN:
+        count += carry
+        carry = 0
         lay = layers[k]
         pts = []
         tries = 0
@@ -471,13 +484,18 @@ def _attached_ribosomes(layers, holes_by_layer, rng):
             c = p + side * n * (SHEET_H + off)
             if not (C.cavity_sdf(c) <= -0.07 and bool(_outside_vacuole(c, 0.05))):
                 continue
+            if np.linalg.norm(c - NC) < RIB_NUC_MIN:  # 核糖體最外緣不得侵入細胞核周圍（核孔凸起到約 1.18）
+                continue
             if any(np.linalg.norm(p - h["p"]) < h["rad"] * 1.35 + 0.07 for h in holes_by_layer[k]):
                 continue
             if pts and np.min(np.linalg.norm(np.array([q[0] for q in pts]) - c, axis=1)) < 0.115:
                 continue
             pts.append((c, k, th / e, side))
         if len(pts) < count:
-            raise ValueError(f"第 {k} 層薄片只放得下 {len(pts)} 顆核糖體（要 {count} 顆）")
+            if side == -1:
+                carry = count - len(pts)
+            else:
+                raise ValueError(f"第 {k} 層薄片只放得下 {len(pts)} 顆核糖體（要 {count} 顆）")
         out.extend(pts)
     return out
 
@@ -509,7 +527,7 @@ def _sdir(psi_deg, chi_deg):
     return math.cos(psi) * _S + math.sin(psi) * (math.cos(chi) * _SU + math.sin(chi) * _SV)
 
 
-def _arc_points(p0, p1, rng, seg_len=0.22, bump=0.09):
+def _arc_points(p0, p1, rng, seg_len=0.22, bump=0.07):
     """沿球殼從 p0 到 p1 的圓滑曲線（方向球面內插、半徑內插加起伏、再加一點側向擺動）。"""
     d0, d1 = _unit(p0 - NC), _unit(p1 - NC)
     r0, r1 = np.linalg.norm(p0 - NC), np.linalg.norm(p1 - NC)
@@ -622,9 +640,11 @@ def _surface_nets(field, lo, hi, h):
     return verts, faces
 
 
-def _ser_mesh(nodes, edges, rng):
+def _ser_mesh(nodes, edges, rng, connectors=()):
     """nodes: {名稱: 位置}；edges: [(a, b)]。以隱函數（圓滑聯集的膠囊）建立管網並用 surface nets 取面，
-    頂點投影回曲面，法向取自隱函數梯度，三叉接點因此平順融合。回傳 (verts, faces, normals)。"""
+    頂點投影回曲面，法向取自隱函數梯度，三叉接點因此平順融合。
+    connectors 是連接管（接到粗糙內質網的那幾條）的邊；回傳 (verts, faces, normals, 各頂點是否屬於連接管)。
+    屬於哪一條管，以離哪條管的中心線最近判定。"""
     curves = []
     for a, b in edges:
         pts = _arc_points(nodes[a], nodes[b], rng, seg_len=0.12)
@@ -654,7 +674,12 @@ def _ser_mesh(nodes, edges, rng):
     g = grad(verts)
     nrm = g / np.linalg.norm(g, axis=1, keepdims=True)
     verts, faces = _orient_mesh(verts, faces)
-    return verts, faces, nrm
+    conn_pts = np.vstack([c[0] for c, e in zip(curves, edges) if tuple(e) in set(connectors)])
+    other_pts = np.vstack([c[0] for c, e in zip(curves, edges) if tuple(e) not in set(connectors)])
+    d_conn = np.min(np.linalg.norm(verts[:, None] - conn_pts[None], axis=2), axis=1)
+    d_other = np.min(np.linalg.norm(verts[:, None] - other_pts[None], axis=2), axis=1)
+    is_conn = d_conn < d_other
+    return verts, faces, nrm, is_conn
 
 
 def _orient_mesh(verts, faces):
@@ -710,6 +735,10 @@ class _Plate:
         return _sheet(self.P, self.H, self.hint, GOLGI_PHI_N, GOLGI_RHO_N, 5)
 
 
+class _NoRoom(Exception):
+    """只用於「小泡或形狀排不下」；其他錯誤（例如體積為負）一律原樣往外丟。"""
+
+
 def _golgi_try(rng):
     """局部座標（凹面朝 +z）的扁囊疊與小泡。回傳 (plate_parts, vesicle_centers, vesicle_radii)。"""
     plates = [_Plate(k, rng) for k in range(6)]
@@ -747,7 +776,7 @@ def _golgi_try(rng):
                 cent.append(c)
                 rads.append(r)
                 return
-        raise ValueError("高基氏體的小泡排不下")
+        raise _NoRoom("高基氏體的小泡排不下")
 
     for _ in range(8):
         place("edge")
@@ -758,7 +787,7 @@ def _golgi_try(rng):
     cen = _bbox_center(np.vstack([cloud, vc_a - vr_a[:, None], vc_a + vr_a[:, None]]))
     reach = max(np.linalg.norm(cloud - cen, axis=1).max(), (np.linalg.norm(vc_a - cen, axis=1) + vr_a).max())
     if reach > 0.685:
-        raise ValueError("高基氏體超出半徑 0.7 的球")
+        raise _NoRoom("高基氏體超出半徑 0.7 的球")
     return solids, cent, rads
 
 
@@ -768,7 +797,7 @@ def _golgi_local(rng):
     for _ in range(30):
         try:
             return _golgi_try(rng)
-        except ValueError as e:
+        except _NoRoom as e:
             err = e
     raise C.PlacementError(f"高基氏體排不出符合的形狀：{err}")
 
@@ -919,6 +948,23 @@ def _microfilaments(ctx, rng):
 # ----------------------------------------------------------------------------
 # 主流程
 # ----------------------------------------------------------------------------
+def _nonmanifold_edges(co, faces, tol):
+    """頂點以 tol 焊接後，面數不等於 2 的邊的條數（封閉流形應為 0）。"""
+    bm = bmesh.new()
+    for p in co:
+        bm.verts.new(p)
+    bm.verts.ensure_lookup_table()
+    for q in faces:
+        try:
+            bm.faces.new([bm.verts[i] for i in q])
+        except ValueError:
+            pass  # 重複面
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=tol)
+    n = sum(1 for e in bm.edges if len(e.link_faces) != 2)
+    bm.free()
+    return n
+
+
 def _check(name, co, ok_mask_fn, what):
     bad = ~ok_mask_fn(co)
     if np.any(bad):
@@ -958,6 +1004,21 @@ def build(ctx):
     _check("粗糙內質網", rer_co, lambda c: _cavity_ok(c, 0.05), "不在空腔內（margin 0.05）")
     _check("粗糙內質網", rer_co, lambda c: _outside_vacuole(c, 0.0), "進入液泡")
     rer_range = (float(d.min()), float(d.max()))
+    ax = _unit(C.RER["axis"])
+    dots = _unit_rows(rer_co - NC) @ ax
+    if dots.min() <= C.RER["min_dot"]:
+        raise ValueError(f"粗糙內質網有頂點方向與軸的內積 {dots.min():.4f} <= {C.RER['min_dot']}（超出半邊範圍）")
+    nm = _nonmanifold_edges(rer_co, rer_faces, 1e-5)
+    if nm:
+        raise ValueError(f"粗糙內質網（焊接容差 1e-5）有 {nm} 條非流形邊，孔洞沒有乾淨切穿")
+    rer_dot_min = float(dots.min())
+    # 孔洞要真的切穿：孔洞中心附近不得有該層的任何頂點
+    for k, hs in holes.items():
+        lco = rer_parts[k][0]  # 只看該層自己的頂點
+        for h in hs:
+            near = np.linalg.norm(lco - h["p"], axis=1) < 0.5 * h["rad"] * h["ratio"]
+            if np.any(near):
+                raise ValueError(f"粗糙內質網第 {k} 層的孔洞沒有切穿（孔內仍有 {int(near.sum())} 個頂點）")
 
     # ---------------- 核糖體（附著的在前，為代表）----------------
     att = _attached_ribosomes(layers, holes, rng)
@@ -971,6 +1032,10 @@ def build(ctx):
     C.add_anchor(root, anchor_rib)
     report["ribosome_attached"] = _tri_count(rib_obj)
     _check("附著核糖體", rib_v, lambda c: _cavity_ok(c, 0.02), "不在空腔內")
+    rib_d = np.linalg.norm(rib_v - NC, axis=1)
+    if rib_d.min() < 1.20:
+        raise ValueError(f"附著核糖體有頂點距細胞核中心 {rib_d.min():.3f} < 1.20")
+    rib_min, rib_n = float(rib_d.min()), len(att)
 
     free_c = []
     for i in range(14):
@@ -1001,11 +1066,11 @@ def build(ctx):
         "N1": NC + 1.50 * _sdir(16, 60),
         "N2": NC + 1.58 * _sdir(16, 180),
         "N3": NC + 1.46 * _sdir(16, -60),
-        "O1": NC + 1.80 * _sdir(40, 75),
-        "O2": NC + 1.74 * _sdir(40, -75),
-        "O3": NC + 1.82 * _sdir(42, 180),
-        "J1": NC + 1.72 * _sdir(36, 22),
-        "J2": NC + 1.70 * _sdir(36, -22),
+        "O1": NC + 1.76 * _sdir(40, 75),
+        "O2": NC + 1.70 * _sdir(40, -75),
+        "O3": NC + 1.77 * _sdir(42, 180),
+        "J1": NC + 1.69 * _sdir(36, 22),
+        "J2": NC + 1.68 * _sdir(36, -22),
         "E1": ends[0],
         "E2": ends[1],
     }
@@ -1015,7 +1080,7 @@ def build(ctx):
         ("O1", "J1"), ("J1", "J2"), ("J2", "O2"), ("O2", "O3"), ("O3", "O1"),
         ("J1", "E1"), ("J2", "E2"),
     ]  # fmt: skip
-    ser_co, ser_faces, ser_nrm = _ser_mesh(nodes, edges, rng)
+    ser_co, ser_faces, ser_nrm, ser_conn = _ser_mesh(nodes, edges, rng, connectors=(("J1", "E1"), ("J2", "E2")))
     ser_obj = _make_obj("smooth_er_main", ser_co, ser_faces)
     ser_obj.data.shade_smooth()
     ser_obj.data.normals_split_custom_set_from_vertices([tuple(map(float, x)) for x in ser_nrm])
@@ -1029,6 +1094,17 @@ def build(ctx):
     sd = np.linalg.norm(ser_co - NC, axis=1)
     if sd.min() < 1.30:
         raise ValueError(f"平滑內質網有頂點進入細胞核周圍 1.30 的球（最近 {sd.min():.3f}）")
+    # 連接管（接到粗糙內質網最外層邊緣的那 2 條）可以超出扇形區，上限放寬到禁入區半徑；
+    # 其餘管網都不得超過 SER 的外半徑。
+    lim_main = C.SER["r_max"]
+    lim_conn = C.SER["zone_radius"]
+    over = np.where(ser_conn, sd > lim_conn, sd > lim_main)
+    if np.any(over):
+        raise ValueError(
+            f"平滑內質網有 {int(over.sum())} 個頂點超出距核心上限"
+            f"（一般 {lim_main}、連接管 {lim_conn}；最遠 {sd[over].max():.3f}）"
+        )
+    ser_max_main = float(sd[~ser_conn].max())
     ser_range = (float(sd.min()), float(sd.max()))
 
     # ---------------- 高基氏體 ----------------
@@ -1077,6 +1153,7 @@ def build(ctx):
 
     total = sum(report.values())
     print(f"[endomembrane] 三角面 {total}：{report}")
+    print(f"[endomembrane] 非流形邊 0；附著核糖體 {rib_n} 顆、距核最小 {rib_min:.3f}；粗糙內質網最小內積 {rer_dot_min:.4f}；平滑內質網一般管距核最大 {ser_max_main:.3f}")
     print(
         f"[endomembrane] 自檢：粗糙內質網距核心 {rer_range[0]:.3f}~{rer_range[1]:.3f}；"
         f"平滑內質網距核心 {ser_range[0]:.3f}~{ser_range[1]:.3f}；高基氏體最大半徑 {gol_max}；"
