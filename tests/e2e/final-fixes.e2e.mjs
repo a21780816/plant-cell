@@ -196,13 +196,10 @@ for (const [W, H, lang] of F3_CASES) {
       })()`);
       assert.ok(scrolled.lastBottom <= scrolled.panelBottom + 1, `面板內容應捲得到底：${JSON.stringify(scrolled)}`);
       const c = await page.evaluate('window.__cell.callout()');
-      if (c.visible) {
-        assert.ok(Math.abs(c.x1 - pn.left) <= 1 && c.y1 >= pn.top - 1 && c.y1 <= pn.bottom + 1, `引線起點應在面板邊緣：${JSON.stringify([c, pn])}`);
-      } else {
-        // 768 寬英文：取景中心（視窗中線）剛好落在 380px 的面板邊緣，細胞核在面板底下 2 像素處，引線依規則不畫（目標在面板內）；其餘情況一定要畫
-        const rep = await page.evaluate("window.__cell.repScreenPoint('nucleus')");
-        assert.ok(rep.x >= pn.left - 1 && rep.x <= pn.right && rep.y >= pn.top && rep.y <= pn.bottom, `引線沒畫時，目標應在面板內：${JSON.stringify([rep, pn])}`);
-      }
+      assert.equal(c.visible, true, '引線應顯示');
+      assert.ok(Math.abs(c.x1 - pn.left) <= 1 && c.y1 >= pn.top - 1 && c.y1 <= pn.bottom + 1, `引線起點應在面板邊緣：${JSON.stringify([c, pn])}`);
+      assert.ok(Math.hypot(c.x2 - c.x1, c.y2 - c.y1) >= 12, `線長應 ≥ 12：${JSON.stringify(c)}`);
+      await page.evaluate("document.getElementById('panel').scrollTop = 0");
       if (W === 768 && lang === 'en') await page.screenshot('assets/preview/web-fix-768-en.png');
       assert.deepEqual(page.consoleErrors, []);
     } finally {

@@ -24,7 +24,7 @@ export const ORGANELLES_EN = {
   },
   cell_membrane: {
     tagline: 'A phospholipid bilayer membrane with embedded proteins and selective permeability',
-    body: 'The plasma membrane is a phospholipid bilayer with embedded proteins, pressed tightly against the inner surface of the primary wall. Its hydrophobic core makes it hard for ions and larger polar molecules to cross directly, so they must be transported through channel proteins, carrier proteins, or pumps; this is selective permeability. Cellulose synthase complexes in the membrane synthesize cellulose, and the proton pump pumps protons out of the cell, establishing the electrochemical gradient that drives many kinds of transport.',
+    body: 'The plasma membrane is a phospholipid bilayer with embedded proteins, pressed tightly against the inner surface of the primary wall. Its hydrophobic core makes it hard for ions and larger polar molecules to cross directly, so they must be transported through channel proteins, carrier proteins, or pumps; this is selective permeability. Cellulose synthase complexes in the membrane synthesize cellulose, and the proton pump transports protons out of the cell, establishing the electrochemical gradient that drives many kinds of transport.',
     fact: 'The plasma membrane proton pump acidifies the cell wall; in the acid growth hypothesis, this is the basis of the wall loosening that allows the cell to elongate.',
   },
   cytoplasm: {
