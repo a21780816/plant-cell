@@ -96,7 +96,7 @@ export function createHighlighter(index) {
         else role = 'family';
       } else role = shellsGhosted && rec.isShell ? 'ghost' : 'dim';
     } else if (shellsGhosted && rec.isShell) role = 'ghost';
-    if (isSelected) return { emi: EMISSIVE.selected + breath, fade: 0, ghost: 0, tint: 0 }; // lift 照舊不給（維持既有行為）
+    if (isSelected) return { emi: EMISSIVE.selected + breath, fade: 0, ghost: 0, lift: 0, tint: 0 };
     if ((role === 'normal' || role === 'dim') && same(hov, rec)) return ROLE_TARGET.hover(role === 'dim');
     return ROLE_TARGET[role]();
   }

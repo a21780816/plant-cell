@@ -169,3 +169,50 @@ test('C4 候選值截圖：三組外觀各一張，材質等於該組數值', as
     await page.screenshot('assets/preview/web-list-active.png');
   } finally { await page.close(); }
 });
+
+test('回歸：選取單一個體後，材質的不透明度是有限數值', async () => {
+  const page = await boot();
+  try {
+    await away(page); await settle(page);
+    const base = await meshSnap(page);
+    await page.evaluate("window.__cell.store.dispatch({ type: 'select', id: 'mitochondrion', inst: 0 })");
+    await settle(page);
+    const info = await page.evaluate(`(() => {
+      const instOf = (m) => { for (let o = m; o; o = o.parent) if (o.userData && o.userData.inst !== undefined) return o.userData.inst; return null; };
+      return window.__cell.index.byId.get('mitochondrion').meshes.map((m) => ({ inst: instOf(m), op: m.material.opacity, tr: m.material.transparent }));
+    })()`);
+    const bad = info.map((m, i) => (Number.isFinite(m.op) ? null : i)).filter((i) => i !== null);
+    assert.deepEqual(bad, [], `不透明度不是有限數值的粒線體網格：${bad.join(', ')}（讀到 ${JSON.stringify(info.map((m) => m.op))}）`);
+    const chosen = info.filter((m) => m.inst === 0);
+    assert.ok(chosen.length > 0, '找不到被選個體的網格');
+    for (const m of chosen) { assert.equal(m.op, 1); assert.equal(m.tr, false); }
+    await clickSel(page, '#panel-close');
+    await page.waitFor('window.__cell.store.getState().selected === null');
+    await settle(page);
+    same(await meshSnap(page), base, null, '取消選取個體');
+    assert.deepEqual(page.consoleErrors, []);
+  } finally { await page.close(); }
+});
+
+test('回歸：點選過外殼個體之後，改選內部構造時外殼照常變成殘影', async () => {
+  let refN;
+  const p1 = await boot();
+  try {
+    await away(p1);
+    await clickList(p1, 'nucleus'); await settle(p1);
+    refN = await meshSnap(p1);
+  } finally { await p1.close(); }
+  const page = await boot();
+  try {
+    await away(page);
+    const inst = await page.evaluate("window.__cell.index.byId.get('cell_wall').rep.userData.inst");
+    await page.evaluate(`window.__cell.store.dispatch({ type: 'select', id: 'cell_wall', inst: ${JSON.stringify(inst)} })`);
+    await settle(page);
+    await clickList(page, 'nucleus'); await settle(page);
+    const now = await meshSnap(page);
+    const wall = now.cell_wall.map((m) => `op=${m.op} tr=${m.tr}`);
+    for (const m of now.cell_wall) { assert.ok(Number.isFinite(m.op), `細胞壁不透明度不是有限數值：${wall.join('; ')}`); assert.equal(m.tr, true, `細胞壁應為透明：${wall.join('; ')}`); }
+    same(now, refN, null, '點選細胞壁後改選細胞核');
+    assert.deepEqual(page.consoleErrors, []);
+  } finally { await page.close(); }
+});
