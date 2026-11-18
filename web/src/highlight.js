@@ -142,7 +142,7 @@ export function createHighlighter(index) {
 
   // 換掉選取細胞質時的外觀（除錯與截圖用）；細胞質的網格下一次 update() 一定重寫材質。
   function setCytoplasmLook(next) {
-    look = { color: next.color, opacity: next.opacity, emissive: next.emissive };
+    look = { ...look, ...next }; // 少給的欄位沿用目前的外觀，避免變成 undefined／NaN
     lookColor.set(look.color);
     for (const rec of recs) if (rec.id === 'cytoplasm') rec.written = null;
   }

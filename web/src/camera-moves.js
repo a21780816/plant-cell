@@ -52,8 +52,9 @@ export function createCameraMoves({ camera, controls, defaultPose = null, setUse
   function scaleDistance(k, opts) {
     const base = move && move.scaleEnd !== undefined ? move.scaleEnd : camera.position.distanceTo(controls.target);
     const endLen = Math.min(controls.maxDistance, Math.max(controls.minDistance, base * k));
-    begin(() => ({ target: move.target0, len: endLen, dir: move.dir0 }), null, opts);
-    move.scaleEnd = endLen;
+    begin(() => ({ target: m.target0, len: endLen, dir: m.dir0 }), null, opts); // begin 不會立刻呼叫它；閉包用 m 固定指向這段動畫
+    const m = move;
+    m.scaleEnd = endLen;
   }
 
   function update(dt) {

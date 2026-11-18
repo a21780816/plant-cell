@@ -278,6 +278,8 @@ test('L5 測驗進行中與揭曉中切換：題目與計時不受影響，總�
     assert.equal(await quizId(page), id0);
     assert.equal(await textOf(page, '#quiz-exit'), 'End quiz');
     assert.equal(await textOf(page, '#quiz-retry'), 'Play again');
+    await settleCamera(page);
+    await frames(page, 2);
     const other = await visibleOther(page, id0);
     await page.click(other.x, other.y);
     await page.waitFor('window.__cell.store.getState().quiz.reveal !== null');
