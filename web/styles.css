@@ -231,7 +231,7 @@ body[data-phase="explore"][data-list="collapsed"]:not([data-layout="narrow"]) #l
   height: 10px;
   border-radius: 50%;
   background: var(--c);
-  box-shadow: 0 0 0 1px rgba(60, 50, 30, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(52, 48, 42, 0.28); /* 細深色描邊：淺色的色點（細胞質、細胞壁）在白底上也看得到 */
 }
 /* 測驗時隱藏名稱：看不見的偽元素佔住同樣的寬度，換行與清單高度都不變（取景的保留帶才不會在測驗中改變） */
 #list.names-hidden button .label { display: none; }
@@ -239,7 +239,7 @@ body[data-phase="explore"][data-list="collapsed"]:not([data-layout="narrow"]) #l
 #list button.active {
   border-color: var(--c);
   background: color-mix(in srgb, var(--c) 20%, #fff);
-  box-shadow: 0 0 0 1.5px var(--c), 0 2px 8px rgba(60, 50, 30, 0.12);
+  box-shadow: 0 0 0 1.5px var(--c), 0 0 0 3px rgba(52, 48, 42, 0.45), 0 2px 8px rgba(60, 50, 30, 0.12); /* 構造色光環外再加一圈深色外環，淺色構造也看得到選取框 */
   font-weight: 650;
 }
 

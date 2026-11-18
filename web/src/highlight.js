@@ -1,7 +1,7 @@
 import { Color } from 'three';
 import { findOrganelle } from './model.js';
 import { instanceOfMesh, isLidMesh } from './picking.js';
-import { GHOST_IDS, ghostOrderOf } from './config.js';
+import { GHOST_IDS, ghostOrderOf, CYTOPLASM_SELECTED } from './config.js';
 
 // 發亮與變暗全用材質參數漸變，不用後製。
 const EMISSIVE = { hover: 0.15, selected: 0.45, family: 0.2 };
@@ -15,11 +15,11 @@ const SELECTED_GHOST_OPACITY = 0.4; // 拆解時被選的外殼：比其他殘�
 const TAU = 0.08;           // 指數趨近的時間常數；約 3 倍（0.25 秒）收斂
 
 const ROLE_TARGET = {
-  normal: () => ({ emi: 0, fade: 0, ghost: 0, lift: 0 }),
-  hover: (dimmed) => ({ emi: EMISSIVE.hover, fade: dimmed ? HOVER_DIM_MIX : 0, ghost: 0, lift: 0 }),
-  family: () => ({ emi: EMISSIVE.family, fade: 0, ghost: 0, lift: 0 }),
-  dim: () => ({ emi: 0, fade: DIM_MIX, ghost: 0, lift: 0 }),
-  ghost: () => ({ emi: 0, fade: GHOST_MIX, ghost: 1, lift: 0 }),
+  normal: () => ({ emi: 0, fade: 0, ghost: 0, lift: 0, tint: 0 }),
+  hover: (dimmed) => ({ emi: EMISSIVE.hover, fade: dimmed ? HOVER_DIM_MIX : 0, ghost: 0, lift: 0, tint: 0 }),
+  family: () => ({ emi: EMISSIVE.family, fade: 0, ghost: 0, lift: 0, tint: 0 }),
+  dim: () => ({ emi: 0, fade: DIM_MIX, ghost: 0, lift: 0, tint: 0 }),
+  ghost: () => ({ emi: 0, fade: GHOST_MIX, ghost: 1, lift: 0, tint: 0 }),
 };
 
 // 趨近目標；足夠接近時直接等於目標，收斂後的數值才精確（還原不留殘差）。
@@ -53,11 +53,15 @@ export function createHighlighter(index) {
         baseTransparent: mat.transparent,
         baseDepthWrite: mat.depthWrite,
         baseCast: mesh.castShadow,
-        cur: { emi: 0, fade: 0, ghost: 0, lift: 0 },
+        cur: { emi: 0, fade: 0, ghost: 0, lift: 0, tint: 0 },
         written: null,
       });
     }
   }
+
+  // 選取細胞質時它那一片的外觀（可由 setCytoplasmLook 換掉）。
+  let look = { ...CYTOPLASM_SELECTED };
+  const lookColor = new Color(look.color);
 
   let state = { selected: null, hovered: null, exploded: false };
   let shellsGhosted = false;
@@ -75,18 +79,24 @@ export function createHighlighter(index) {
   const same = (a, rec) => a && a.id === rec.id && (a.inst === null || a.inst === rec.inst);
 
   function targetOf(rec, breath) {
-    const { selected: sel, hovered: hov } = state;
+    const { hovered: hov } = state;
+    let sel = state.selected;
+    if (sel && sel.id === 'cytoplasm') {
+      // 細胞質沒有形狀（它是填滿各構造之間的那一片）：選它時只把那一片染色，其他構造當作沒有選取，不褪色
+      if (rec.id === 'cytoplasm') return { emi: look.emissive + breath, fade: 0, ghost: 0, lift: 0, tint: 1 };
+      sel = null;
+    }
     let role = 'normal';
     let isSelected = false;
     if (sel) {
       if (rec.id === sel.id) {
         // 拆解中選了外殼（只能從清單選）：它維持半透明（不透明度約 0.35）並發亮，否則放大的不透明外殼會把裡面全部遮住
-        if (state.exploded && rec.isShell) return { emi: EMISSIVE.family + breath, fade: 0, ghost: 1, lift: 1 };
+        if (state.exploded && rec.isShell) return { emi: EMISSIVE.family + breath, fade: 0, ghost: 1, lift: 1, tint: 0 };
         if (sel.inst !== null && rec.inst === sel.inst) isSelected = true;
         else role = 'family';
       } else role = shellsGhosted && rec.isShell ? 'ghost' : 'dim';
     } else if (shellsGhosted && rec.isShell) role = 'ghost';
-    if (isSelected) return { emi: EMISSIVE.selected + breath, fade: 0, ghost: 0 };
+    if (isSelected) return { emi: EMISSIVE.selected + breath, fade: 0, ghost: 0, tint: 0 }; // lift 照舊不給（維持既有行為）
     if ((role === 'normal' || role === 'dim') && same(hov, rec)) return ROLE_TARGET.hover(role === 'dim');
     return ROLE_TARGET[role]();
   }
@@ -94,6 +104,7 @@ export function createHighlighter(index) {
   function write(rec) {
     const { mat, cur } = rec;
     mat.color.copy(rec.baseColor).lerp(DIM_COLOR, cur.fade);
+    if (cur.tint > 0) mat.color.lerp(lookColor, cur.tint); // 選取細胞質：整片染成指定色
     mat.emissive.copy(mat.color);
     mat.emissiveIntensity = rec.baseEI + cur.emi;
     const ghosting = cur.ghost > 0.001;
@@ -105,6 +116,7 @@ export function createHighlighter(index) {
     mat.depthWrite = ghosting ? false : rec.baseDepthWrite;
     const cap = GHOST_OPACITY + (SELECTED_GHOST_OPACITY - GHOST_OPACITY) * cur.lift;
     mat.opacity = rec.baseOpacity + (Math.min(rec.baseOpacity, cap) - rec.baseOpacity) * cur.ghost;
+    if (cur.tint > 0) mat.opacity += (look.opacity - mat.opacity) * cur.tint;
     rec.mesh.renderOrder = ghosting && rec.ghostOrder !== null ? rec.ghostOrder : rec.baseOrder; // 殘影時固定由外到內的順序
     rec.mesh.castShadow = rec.baseCast && cur.ghost < 0.5; // 殘影不投影，否則看不見的外殼會把內部遮暗
   }
@@ -121,15 +133,24 @@ export function createHighlighter(index) {
       c.fade = approach(c.fade, t.fade, k);
       c.ghost = approach(c.ghost, t.ghost, k);
       c.lift = approach(c.lift, t.lift, k);
-      if (w && c.emi === w.emi && c.fade === w.fade && c.ghost === w.ghost && c.lift === w.lift) continue;
+      c.tint = approach(c.tint, t.tint, k);
+      if (w && c.emi === w.emi && c.fade === w.fade && c.ghost === w.ghost && c.lift === w.lift && c.tint === w.tint) continue;
       write(rec);
-      rec.written = { emi: c.emi, fade: c.fade, ghost: c.ghost, lift: c.lift };
+      rec.written = { emi: c.emi, fade: c.fade, ghost: c.ghost, lift: c.lift, tint: c.tint };
     }
+  }
+
+  // 換掉選取細胞質時的外觀（除錯與截圖用）；細胞質的網格下一次 update() 一定重寫材質。
+  function setCytoplasmLook(next) {
+    look = { color: next.color, opacity: next.opacity, emissive: next.emissive };
+    lookColor.set(look.color);
+    for (const rec of recs) if (rec.id === 'cytoplasm') rec.written = null;
   }
 
   return {
     apply,
     update,
+    setCytoplasmLook,
     get shellsGhosted() { return shellsGhosted; },
   };
 }

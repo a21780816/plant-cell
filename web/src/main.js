@@ -513,6 +513,7 @@ async function main() {
       return view.frame(f.box, f.extent, f.margin, f.points);
     },
     shellFrameCorners: () => shellFrame.points.slice(), // 含外殼的完整拆解外框的八個角（攤平）
+    setCytoplasmLook: (look) => highlighter.setCytoplasmLook(look), // 除錯與截圖用：換掉選取細胞質時的外觀
     cameraBusy: () => moves.busy,
     explodeProgress: () => exploder.progress,
     lidOpen: () => lid.isOpen,
