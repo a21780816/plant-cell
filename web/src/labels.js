@@ -194,6 +194,14 @@ export function createLabels({
         it.dot.classList.toggle('selected', on);
       }
     },
+    // 換語言：更新藥丸文字；可見時重新量大小、清掉每個 prev（讓版面重新找位置）並立刻重排
+    setNames(nameOfNext) {
+      for (const it of items) it.el.textContent = nameOfNext(it.id);
+      if (!visible) return;
+      sizes();
+      for (const it of items) it.prev = null;
+      update();
+    },
     update,
     get visible() { return visible; },
   };

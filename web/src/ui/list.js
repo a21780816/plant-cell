@@ -1,12 +1,16 @@
+import { organelleName } from '../i18n.js';
+
 // 底部的構造清單。root 是 #list；每個按鈕帶 data-id，左側是該構造的色點（palette 的 main）。
 export function mountList(root, { organelles, palette, onSelect }) {
   root.innerHTML = '';
   const buttons = new Map();
+  let lang = 'zh';
+  let namesHidden = false;
   for (const o of organelles) {
     const b = document.createElement('button');
     b.type = 'button';
     b.dataset.id = o.id;
-    b.dataset.zh = o.zh; // 測驗時名稱隱藏，CSS 用它的偽元素（看不見）佔住原本的寬度，清單的版面高度才不隨名稱顯示與否改變
+    b.dataset.name = o.zh; // 測驗時名稱隱藏，CSS 用它的偽元素（看不見）佔住原本的寬度，清單的版面高度才不隨名稱顯示與否改變
     b.style.setProperty('--c', (palette[o.id] && palette[o.id].main) || '#B8B4AC');
     b.setAttribute('aria-pressed', 'false');
     const dot = document.createElement('span');
@@ -17,7 +21,7 @@ export function mountList(root, { organelles, palette, onSelect }) {
     b.append(dot, label);
     b.addEventListener('click', () => onSelect(o.id));
     root.append(b);
-    buttons.set(o.id, { b, name: o.zh });
+    buttons.set(o.id, { b, label });
   }
   return {
     focus(id) {
@@ -33,9 +37,20 @@ export function mountList(root, { organelles, palette, onSelect }) {
     },
     // 測驗時隱藏名稱：畫面上只留色點（並移除 title 提示，避免洩漏答案）。
     setNamesHidden(hidden) {
-      root.classList.toggle('names-hidden', !!hidden);
-      for (const { b, name } of buttons.values()) {
-        if (hidden) b.removeAttribute('title'); else b.title = name;
+      namesHidden = !!hidden;
+      root.classList.toggle('names-hidden', namesHidden);
+      for (const [id, { b }] of buttons) {
+        if (namesHidden) b.removeAttribute('title'); else b.title = organelleName(lang, id);
+      }
+    },
+    // 切換語言：更新名稱文字、data-name（隱藏名稱時的佔位寬度）與 title
+    setLang(next) {
+      lang = next;
+      for (const [id, { b, label }] of buttons) {
+        const name = organelleName(lang, id);
+        label.textContent = name;
+        b.dataset.name = name;
+        if (!namesHidden) b.title = name;
       }
     },
   };

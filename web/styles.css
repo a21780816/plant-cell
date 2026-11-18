@@ -192,7 +192,7 @@ body {
 }
 /* 測驗時隱藏名稱：看不見的偽元素佔住同樣的寬度，換行與清單高度都不變（取景的保留帶才不會在測驗中改變） */
 #list.names-hidden button .label { display: none; }
-#list.names-hidden button::after { content: attr(data-zh); visibility: hidden; }
+#list.names-hidden button::after { content: attr(data-name); visibility: hidden; }
 #list button.active {
   border-color: var(--c);
   background: color-mix(in srgb, var(--c) 20%, #fff);
@@ -242,6 +242,36 @@ body {
 #toolbar button:disabled { opacity: 0.45; cursor: default; }
 #toolbar button:disabled:hover { background: rgba(255, 255, 255, 0.7); border-color: var(--line); }
 #toolbar button:focus-visible { outline: 3px solid rgba(78, 115, 82, 0.45); outline-offset: 2px; }
+
+/* ---- 語言切換鈕（開場卡片與工具列各一組；aria-pressed 標示目前語言）---- */
+.lang-switch { display: flex; gap: 4px; }
+#toolbar .lang-switch { margin-left: 6px; padding-left: 8px; border-left: 1px solid var(--line); }
+#toolbar .lang-switch button[aria-pressed="true"] {
+  border-color: #4E7352;
+  background: color-mix(in srgb, #4E7352 16%, #fff);
+  box-shadow: 0 0 0 1.5px #4E7352, 0 2px 8px rgba(60, 50, 30, 0.12);
+  font-weight: 650;
+}
+#intro-card .lang-switch { justify-content: center; gap: 8px; margin-top: 18px; }
+#intro-card .lang-switch button {
+  padding: 4px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+#intro-card .lang-switch button:hover { background: #fff; border-color: rgba(80, 66, 40, 0.25); }
+#intro-card .lang-switch button[aria-pressed="true"] {
+  border-color: #4E7352;
+  background: color-mix(in srgb, #4E7352 16%, #fff);
+  font-weight: 650;
+}
+#intro-card .lang-switch button:focus-visible { outline: 3px solid rgba(78, 115, 82, 0.45); outline-offset: 2px; }
 
 /* ---- 測驗卡片：測驗時取代底部的清單（同一個位置），與介紹面板同一套玻璃質感 ---- */
 #quiz {

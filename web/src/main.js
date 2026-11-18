@@ -4,9 +4,10 @@ import palette from '../../shared/palette.json';
 import { createScene } from './scene.js';
 import { parseModel, indexModel, findOrganelle, findInstanceRoot } from './model.js';
 import { applyMaterials } from './materials.js';
-import { ORGANELLES, INTRO, QUIZ_IDS, getOrganelle } from './organelles.js';
+import { ORGANELLES, QUIZ_IDS, getOrganelle } from './organelles.js';
+import { t, readLang, writeLang, organelleName, introContent, HTML_LANG } from './i18n.js';
 import { GHOST_IDS, SCALE_IDS } from './config.js';
-import { createStore } from './state.js';
+import { createStore, initialState } from './state.js';
 import { createPicker } from './picking.js';
 import { createHighlighter } from './highlight.js';
 import { createCameraMoves } from './camera-moves.js';
@@ -19,14 +20,13 @@ import { mountPanel } from './ui/panel.js';
 import { mountList } from './ui/list.js';
 import { mountIntro } from './ui/intro.js';
 import { mountToolbar } from './ui/toolbar.js';
+import { mountLangSwitch } from './ui/lang-switch.js';
 import { mountQuizUI } from './ui/quiz-ui.js';
 import { placeHoverName } from './ui/hover-name.js';
 
 const canvas = document.getElementById('stage');
 const root = document.documentElement;
 
-const FALLBACK_TEXT = '這個瀏覽器無法顯示 3D 內容，請改用新版的 Chrome 開啟。';
-const LOAD_FAIL_TEXT = '模型載入失敗，請重新整理頁面再試一次。';
 const IDLE_MS = 4000; // 使用者閒置這麼久才開始自轉
 const REVEAL_MS = 1800; // 測驗：作答後揭曉正確答案的時間
 const NARROW_W = 720; // 視窗寬度小於這個值是 narrow 版面
@@ -35,14 +35,15 @@ const NARROW_STAGE = 0.52; // narrow：畫布佔視窗高度的比例
 const EXPLODE_MOVE = { duration: 1, ease: easeInOutCubic }; // 拆解／組合時的鏡頭移動：與模型的伸縮同步，才不會在動畫中途被切出畫面
 
 // 建立 WebGL 失敗：只顯示說明（開場卡片與清單都不出現），並留下錯誤原因供除錯。
-function showFallback(e, text = FALLBACK_TEXT, what = '無法建立 WebGL') {
+// 說明文字取記住的語言（store 可能還沒建立，所以直接讀 localStorage）。
+function showFallback(e, key = 'fallback', what = '無法建立 WebGL') {
   root.dataset.cellError = String(e && e.message ? e.message : e);
   console.warn(`[cell] ${what}`, e);
   document.getElementById('intro').hidden = true;
   const loadingEl = document.getElementById('loading');
   if (loadingEl) loadingEl.hidden = true;
   const box = document.getElementById('fallback');
-  box.textContent = text;
+  box.textContent = t(readLang(), key);
   box.hidden = false;
 }
 
@@ -79,6 +80,17 @@ const layoutCtl = (() => {
   };
 })();
 
+// 依語言更新頁面上不由元件管理的文字：html lang、標題、載入提示、清單標題與兩個 aria-label。
+function applyDocumentText(lang) {
+  root.lang = HTML_LANG[lang];
+  document.title = t(lang, 'title');
+  const loadingEl = document.getElementById('loading');
+  if (loadingEl) loadingEl.textContent = t(lang, 'loading');
+  document.getElementById('list-title').textContent = t(lang, 'listTitle');
+  document.getElementById('toolbar').setAttribute('aria-label', t(lang, 'toolbarLabel'));
+  document.getElementById('quiz').setAttribute('aria-label', t(lang, 'quiz'));
+}
+
 const cornersOf = (b) => {
   const out = [];
   for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) out.push(x, y, z);
@@ -86,6 +98,7 @@ const cornersOf = (b) => {
 };
 
 async function main() {
+  applyDocumentText(readLang());
   const loading = document.getElementById('loading');
   let view;
   try {
@@ -134,7 +147,11 @@ async function main() {
   const ids = [...new Set(meshes.map(findOrganelle).filter((x) => x !== null))];
 
   // ---- 狀態與各個畫面：選取狀態只存在 store ----
-  const store = createStore();
+  const store = createStore({ ...initialState, lang: readLang() });
+  const setLanguage = (lang) => {
+    writeLang(lang);
+    store.dispatch({ type: 'setLang', lang });
+  };
   const highlighter = createHighlighter(index);
   const moves = createCameraMoves({
     camera: view.camera, controls: view.controls,
@@ -166,7 +183,7 @@ async function main() {
   let revealTimer = 0;
   const showQuestion = () => {
     shownId = quiz.currentId;
-    quizUI.showQuestion({ index: quiz.index, total: quiz.total, zh: getOrganelle(shownId).zh });
+    quizUI.showQuestion({ index: quiz.index, total: quiz.total, id: shownId });
   };
   const startRound = () => {
     clearTimeout(revealTimer);
@@ -186,7 +203,7 @@ async function main() {
     if (!h || !quiz || quiz.finished || s.quiz.reveal) return;
     const { correct, expectedId } = quiz.answer(h.id);
     store.dispatch({ type: 'quizReveal', id: expectedId, correct });
-    quizUI.showResult({ correct, expectedZh: getOrganelle(expectedId).zh, pickedZh: getOrganelle(h.id).zh });
+    quizUI.showResult({ correct, expectedId, pickedId: h.id });
     revealTimer = setTimeout(() => {
       revealTimer = 0;
       store.dispatch({ type: 'quizNext' });
@@ -198,7 +215,7 @@ async function main() {
   }
   const labels = createLabels({
     container: document.getElementById('labels'), index, camera: view.camera, palette,
-    nameOf: (id) => getOrganelle(id).zh,
+    nameOf: (id) => organelleName(store.getState().lang, id),
     onSelect: (id) => store.dispatch({ type: 'select', id, inst: null }),
     obstacles: () => ['list-wrap', 'toolbar', 'panel'].map((n) => {
       const el = document.getElementById(n);
@@ -235,13 +252,18 @@ async function main() {
   const hoverName = document.getElementById('hover-name');
   loading.hidden = true; // 模型已載入：開場卡片接手
   const intro = mountIntro(document.getElementById('intro'), {
-    intro: INTRO,
+    intro: introContent(store.getState().lang),
     onStart: () => {
       store.dispatch({ type: 'start' });
       lid.open();
       intro.hide();
     },
   });
+  // 語言切換鈕：開場卡片（開始鈕之後）與工具列（測驗鈕之後）各一組，切換時一起更新 aria-pressed
+  const langSwitches = [
+    mountLangSwitch(document.getElementById('intro-card'), { onChange: setLanguage }),
+    mountLangSwitch(document.getElementById('toolbar'), { onChange: setLanguage }),
+  ];
 
   const isPickable = (id) => {
     const o = getOrganelle(id);
@@ -280,7 +302,7 @@ async function main() {
     const o = h && getOrganelle(h.id);
     const show = !!o && !picker.pressed;
     const showName = show && store.getState().phase !== 'quiz'; // 測驗中不顯示名稱（會洩漏答案），游標仍是手指
-    if (o) hoverName.textContent = o.zh;
+    if (o) hoverName.textContent = organelleName(store.getState().lang, h.id);
     hoverName.hidden = !showName;
     canvas.style.cursor = show ? 'pointer' : '';
     if (showName) placeLabel();
@@ -321,9 +343,20 @@ async function main() {
       : entry.instances.find((r) => r.userData.inst === sel.inst) ?? entry.rep;
   };
 
-  let prev = { phase: 'intro', selected: undefined, hovered: undefined, exploded: false, labels: false };
+  let prev = { phase: 'intro', selected: undefined, hovered: undefined, exploded: false, labels: false, lang: null };
   function render(s) {
     document.body.dataset.phase = s.phase; // 清單等介面依階段顯示（CSS）
+    if (s.lang !== prev.lang) {
+      applyDocumentText(s.lang);
+      list.setLang(s.lang);
+      labels.setNames((id) => organelleName(s.lang, id));
+      panel.setLang(s.lang);
+      quizUI.setLang(s.lang);
+      intro.setContent(introContent(s.lang));
+      for (const sw of langSwitches) sw.setLang(s.lang);
+      paintHover();
+      view.resize(); // 清單高度可能改變：重算保留帶與取景
+    }
     highlighter.apply(s);
     toolbar.setState(s);
     labels.setVisible(s.labels && s.phase === 'explore');
@@ -363,7 +396,7 @@ async function main() {
       list.setActive(sel ? sel.id : null);
       labels.setSelected(sel ? sel.id : null);
       if (sel) {
-        panel.show(getOrganelle(sel.id));
+        panel.show(sel.id);
         if (shellSel) {
           if (!explodeChanged) moves.home(); // 外殼類：鏡頭平順移到「看得到整個被選構造」的預設取景
         } else {
@@ -485,4 +518,4 @@ async function main() {
   });
 }
 
-main().catch((e) => showFallback(e, LOAD_FAIL_TEXT, '載入失敗')); // 模型載入或解析失敗：開場、清單、工具列都不顯示（phase 不是 explore），只留說明
+main().catch((e) => showFallback(e, 'loadFail', '載入失敗')); // 模型載入或解析失敗：開場、清單、工具列都不顯示（phase 不是 explore），只留說明
