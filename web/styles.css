@@ -395,6 +395,11 @@ body {
   font-weight: 650;
 }
 
+/* 介紹卡片的引線：在名稱標籤之上（DOM 順序），在清單、工具列（z 2）與面板、測驗卡片（z 3）之下 */
+#callout { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 1; pointer-events: none; overflow: visible; }
+#callout .callout-line { stroke: rgba(52, 48, 42, 0.5); stroke-width: 1; }
+#callout .callout-dot { stroke: #fff; stroke-width: 1.2; filter: drop-shadow(0 0 1px rgba(40, 32, 20, 0.5)); }
+
 /* ---- 開場 ---- */
 /* 開場時構造清單不顯示；進入探索後淡入（沒有 3D 時 data-phase 不會變成 explore，清單一直不顯示） */
 #list-wrap, #toolbar { transition: opacity 0.5s ease, visibility 0s; }

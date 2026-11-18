@@ -13,6 +13,7 @@ import { createCameraMoves } from './camera-moves.js';
 import { createLid, easeInOutCubic } from './lid.js';
 import { createExploder } from './explode.js';
 import { createLabels } from './labels.js';
+import { createCallout, calloutGeometry, calloutTargetOf } from './callout.js';
 import { createQuiz } from './quiz.js';
 import { mountPanel } from './ui/panel.js';
 import { mountList } from './ui/list.js';
@@ -205,7 +206,32 @@ async function main() {
     }),
   });
   // 標籤在每次繪製之前更新（此時鏡頭與模型矩陣都已是這一格要畫的狀態），才不會落後一格
-  view.scene.onBeforeRender = () => labels.update();
+  view.scene.onBeforeRender = () => { labels.update(); updateCallout(); };
+  const callout = createCallout(document.getElementById('callout'));
+  const calloutV = new Vector3();
+  // 介紹卡片的引線：只在探索階段、有選取且卡片顯示時才畫
+  function updateCallout() {
+    const s = store.getState();
+    const panelEl = document.getElementById('panel');
+    const active = s.phase === 'explore' && s.selected && !panelEl.hidden;
+    let target = null;
+    if (active) {
+      const obj = calloutTargetOf(index.byId.get(s.selected.id), s.selected);
+      if (obj) {
+        const p = projectToClient(obj.getWorldPosition(calloutV));
+        if (p.z >= -1 && p.z <= 1) target = { x: p.x, y: p.y }; // 鏡頭背面或超出遠近平面就不畫
+      }
+    }
+    const d = active ? document.getElementById('panel-dot').getBoundingClientRect() : null;
+    const geo = calloutGeometry({
+      mode: layoutCtl.current.mode,
+      panel: active ? panelEl.getBoundingClientRect() : null,
+      dot: d ? { x: (d.left + d.right) / 2, y: (d.top + d.bottom) / 2 } : null,
+      target,
+      stage: canvas.getBoundingClientRect(),
+    });
+    callout.draw(geo, active ? (palette[s.selected.id]?.main ?? '#B8B4AC') : '#B8B4AC');
+  }
   const hoverName = document.getElementById('hover-name');
   loading.hidden = true; // 模型已載入：開場卡片接手
   const intro = mountIntro(document.getElementById('intro'), {
@@ -414,6 +440,7 @@ async function main() {
     autoRotating: () => view.isAutoRotating(),
     hitAt: (x, y) => picker.hitAt(x, y), // 與點選相同規則的射線測試
     screenPointOf,
+    callout: () => ({ ...callout.state }), // 引線最後一次畫的值
     repScreenPoint(id) {
       const entry = index.byId.get(id);
       const p = projectToClient(entry.rep.getWorldPosition(new Vector3()));
