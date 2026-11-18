@@ -182,3 +182,33 @@ test('quizReveal 與 quizNext：測驗階段有效、探索與開場階段無效
   assert.equal(reduce(initialState, { type: 'quizReveal', id: 'golgi', correct: true }), initialState);
   assert.equal(reduce(initialState, { type: 'quizNext' }), initialState);
 });
+
+test('initialState.lang 是 zh', () => {
+  assert.equal(initialState.lang, 'zh');
+});
+
+test('setLang 在 intro、explore、quiz 階段都有效，只改 lang', () => {
+  const quiz = reduce(explore, { type: 'quizStart' });
+  for (const s of [initialState, explore, quiz]) {
+    const s2 = reduce(s, { type: 'setLang', lang: 'en' });
+    assert.equal(s2.lang, 'en');
+    assert.deepEqual({ ...s2, lang: s.lang }, s);
+  }
+});
+
+test('setLang 給不支援的值或目前的語言時回傳原物件', () => {
+  for (const lang of ['fr', undefined, 'zh']) {
+    assert.equal(reduce(explore, { type: 'setLang', lang }), explore);
+  }
+});
+
+test('以英文起始的 store，其他動作不改 lang', () => {
+  const store = createStore({ ...initialState, lang: 'en' });
+  for (const action of [
+    { type: 'start' }, { type: 'select', id: 'nucleus', inst: 0 }, { type: 'toggleExplode' },
+    { type: 'quizStart' }, { type: 'quizExit' },
+  ]) {
+    store.dispatch(action);
+    assert.equal(store.getState().lang, 'en', `${action.type} 之後`);
+  }
+});

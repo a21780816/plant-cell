@@ -1,14 +1,18 @@
+import { LANGS } from './i18n.js';
+
 // 唯一的狀態來源：發亮、面板、清單、鏡頭都訂閱這裡，不各自維護「目前選了誰」。
 export const initialState = {
-  phase: 'intro',   // 'intro'（開場，只接受 start）→ 'explore'
+  phase: 'intro',   // 'intro'（開場，只接受 start 與 setLang）→ 'explore'
   selected: null,   // { id, inst }；inst 為 null 表示從清單選的
   hovered: null,    // { id, inst }
   exploded: false,
   labels: false,
+  lang: 'zh',       // 'zh' | 'en'
   quiz: null,       // 測驗中：{ saved: { labels, exploded }, reveal: null | { id, correct } }
 };
 
 export function reduce(state, action) {
+  if (action.type === 'setLang') return LANGS.includes(action.lang) && action.lang !== state.lang ? { ...state, lang: action.lang } : state;
   if (action.type === 'start') return state.phase === 'intro' ? { ...state, phase: 'explore' } : state;
   if (state.phase === 'intro') return state; // 開場階段除了 start 以外一律無效
   switch (action.type) {
