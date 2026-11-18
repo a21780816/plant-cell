@@ -295,6 +295,22 @@ export function createScene(canvas, { getLayout = null } = {}) {
   window.addEventListener('resize', resize);
   resize();
 
+  // 只有可用範圍變了（畫布大小沒變，例如構造清單收合）時的重新取景：不像 resize() 讓平移一格跳到終點、
+  // 沒動過鏡頭時連距離也跳，這裡鏡頭不動，平移交給 stepOffset 緩動，距離由呼叫端用鏡頭動畫處理。
+  // 回傳 { atDefault: 鏡頭還在預設位置, scale: 新預設距離 ÷ 舊預設距離 }；畫布大小變了就改走 resize()（一律回 { false, 1 }）。
+  function relayout() {
+    if (!boxFramed) { resize(); return { atDefault: false, scale: 1 }; }
+    const oldDist = defaultDistance();
+    const w0 = lay.width, h0 = lay.height;
+    const next = readLayout();
+    if (next.width !== w0 || next.height !== h0) { resize(); return { atDefault: false, scale: 1 }; }
+    lay = next;
+    fitCache = null;
+    const scale = defaultDistance() / oldDist;
+    syncOffset(false);
+    return { atDefault: !userMoved, scale };
+  }
+
   function start(onFrame) {
     let last = performance.now();
     renderer.setAnimationLoop((now) => {
@@ -319,7 +335,7 @@ export function createScene(canvas, { getLayout = null } = {}) {
   const isAutoRotating = () => controls.autoRotate;
 
   return {
-    renderer, scene, camera, controls, start, resize, frame, setFrameBox, defaultPose, setUserMoved,
+    renderer, scene, camera, controls, start, resize, relayout, frame, setFrameBox, defaultPose, setUserMoved,
     setAutoRotate, isAutoRotating,
   };
 }

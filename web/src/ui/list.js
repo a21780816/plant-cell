@@ -1,4 +1,4 @@
-import { organelleName } from '../i18n.js';
+import { organelleName, t } from '../i18n.js';
 
 // 底部的構造清單。root 是 #list；每個按鈕帶 data-id，左側是該構造的色點（palette 的 main）。
 export function mountList(root, { organelles, palette, onSelect }) {
@@ -52,6 +52,21 @@ export function mountList(root, { organelles, palette, onSelect }) {
         b.dataset.name = name;
         if (!namesHidden) b.title = name;
       }
+    },
+  };
+}
+
+// 清單標題列的收合鈕：原生 button，狀態寫在 aria-expanded 與 aria-label（箭頭方向由 CSS 依 aria-expanded 畫）。
+// set() 只在值真的改變時才寫 DOM。
+export function mountListToggle(button, { onToggle }) {
+  let shown = null; // { collapsed, lang }
+  button.addEventListener('click', () => onToggle());
+  return {
+    set(collapsed, lang) {
+      const c = !!collapsed;
+      if (!shown || shown.collapsed !== c) button.setAttribute('aria-expanded', String(!c));
+      if (!shown || shown.collapsed !== c || shown.lang !== lang) button.setAttribute('aria-label', t(lang, c ? 'expandList' : 'collapseList'));
+      shown = { collapsed: c, lang };
     },
   };
 }

@@ -155,8 +155,15 @@ body {
   box-shadow: var(--shadow);
   color: var(--ink);
 }
-#list-title {
+#list-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   margin: 0 0 5px;
+}
+#list-title {
+  margin: 0;
   font-size: 12px;
   line-height: 1.5;
   font-weight: 650;
@@ -164,6 +171,38 @@ body {
   color: var(--ink-faint);
   text-align: center;
 }
+/* 收合鈕：版面上只有 18px 見方（與標題行同高，展開時清單高度不變）；點擊範圍用 ::before 擴到 24px，不佔版面。箭頭用 CSS 畫。 */
+#list-toggle {
+  position: relative;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+#list-toggle::before { content: ''; position: absolute; left: 50%; top: 50%; width: 24px; height: 24px; transform: translate(-50%, -50%); }
+#list-toggle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translate(-50%, -75%) rotate(45deg); /* 向下 */
+}
+#list-toggle[aria-expanded="false"]::after { transform: translate(-50%, -25%) rotate(-135deg); } /* 向上 */
+#list-toggle:hover { background: rgba(80, 66, 40, 0.08); color: var(--ink); }
+#list-toggle:focus-visible { outline: 3px solid rgba(78, 115, 82, 0.45); outline-offset: 2px; }
+/* 探索階段收合：只剩標題列（測驗中清單照展開的高度佔位，取景與展開時相同） */
+body[data-phase="explore"][data-list="collapsed"]:not([data-layout="narrow"]) #list { display: none; }
+body[data-phase="explore"][data-list="collapsed"]:not([data-layout="narrow"]) #list-head { margin-bottom: 0; }
 #list { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
 #list button {
   display: inline-flex;
@@ -577,7 +616,9 @@ body[data-layout="short"] #list-wrap {
   gap: 10px;
   padding: 6px 10px;
 }
-body[data-layout="short"] #list-title { margin: 0; flex: none; white-space: nowrap; }
+body[data-layout="short"] #list-head { margin: 0; flex: none; }
+body[data-layout="short"] #list-title { white-space: nowrap; }
+body[data-layout="short"][data-phase="explore"][data-list="collapsed"] #list-wrap { justify-content: center; }
 body[data-layout="short"] #list {
   flex: 1;
   min-width: 0;
@@ -629,7 +670,9 @@ body[data-layout="narrow"] #quiz {
   margin: 0;
 }
 body[data-layout="narrow"] #list-wrap { overflow-y: auto; scrollbar-width: thin; padding: 10px 12px 12px; }
-body[data-layout="narrow"] #list-title { font-size: 13px; margin-bottom: 8px; }
+body[data-layout="narrow"] #list-head { margin-bottom: 8px; }
+body[data-layout="narrow"] #list-title { font-size: 13px; }
+body[data-layout="narrow"] #list-toggle { display: none; }
 body[data-layout="narrow"] #list { gap: 6px; }
 body[data-layout="narrow"] #list button { padding: 6px 11px 6px 9px; font-size: 14px; }
 body[data-layout="narrow"] #panel { padding: 18px 18px 16px; font-size: 15px; line-height: 1.65; }

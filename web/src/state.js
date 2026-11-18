@@ -8,12 +8,14 @@ export const initialState = {
   exploded: false,
   labels: false,
   lang: 'zh',       // 'zh' | 'en'
+  listCollapsed: false, // 構造清單是否收合（只影響版面，不寫 localStorage）
   quiz: null,       // 測驗中：{ saved: { labels, exploded }, reveal: null | { id, correct } }
 };
 
 export function reduce(state, action) {
   if (action.type === 'setLang') return LANGS.includes(action.lang) && action.lang !== state.lang ? { ...state, lang: action.lang } : state;
   if (action.type === 'start') return state.phase === 'intro' ? { ...state, phase: 'explore' } : state;
+  if (action.type === 'toggleList') return { ...state, listCollapsed: !state.listCollapsed };
   if (state.phase === 'intro') return state; // 開場階段除了 start 以外一律無效
   switch (action.type) {
     case 'hover':

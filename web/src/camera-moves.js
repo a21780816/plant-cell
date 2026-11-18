@@ -45,6 +45,15 @@ export function createCameraMoves({ camera, controls, defaultPose = null, setUse
     }, () => (applyDefault ? applyDefault() : setUserMoved(false)), opts); // 結束時完整套用預設鏡頭（含 maxDistance、far）
   }
 
+  // 只改距離：目標點與觀看方向維持開始時的樣子，長度乘上 k（夾在 controls 的 min／max 之間）。
+  // 結束時不重設 userMoved，因為鏡頭仍是使用者（或自轉）決定的位置。
+  function scaleDistance(k, opts) {
+    begin(() => {
+      const len = Math.min(controls.maxDistance, Math.max(controls.minDistance, move.len0 * k));
+      return { target: move.target0, len, dir: move.dir0 };
+    }, null, opts);
+  }
+
   function update(dt) {
     if (!move) return;
     const m = move;
@@ -66,7 +75,7 @@ export function createCameraMoves({ camera, controls, defaultPose = null, setUse
   controls.addEventListener('start', () => { move = null; }); // 使用者接手
 
   return {
-    focus, home, update,
+    focus, home, scaleDistance, update,
     get busy() { return move !== null; },
   };
 }

@@ -16,6 +16,7 @@ const ZH = {
   quizScore: '答對 {score}／{total} 題', playAgain: '再玩一次', endQuiz: '結束測驗',
   fallback: '這個瀏覽器無法顯示 3D 內容，請改用新版的 Chrome 開啟。',
   loadFail: '模型載入失敗，請重新整理頁面再試一次。',
+  collapseList: '收起構造清單', expandList: '展開構造清單',
 };
 const EN = {
   title: 'Plant Cell', loading: 'Loading…', listTitle: 'Cell structures', toolbarLabel: 'View tools',
@@ -26,14 +27,15 @@ const EN = {
   quizScore: 'You got {score} out of {total}', playAgain: 'Play again', endQuiz: 'End quiz',
   fallback: "This browser can't display 3D content. Please open this page in a recent version of Chrome.",
   loadFail: 'The model failed to load. Please refresh the page and try again.',
+  collapseList: 'Collapse structure list', expandList: 'Expand structure list',
 };
 
 const placeholders = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
 
-test('UI_TEXT 的 zh、en 鍵相同（20 個），值都是非空字串，兩語的 {佔位符} 集合相同', () => {
+test('UI_TEXT 的 zh、en 鍵相同（22 個），值都是非空字串，兩語的 {佔位符} 集合相同', () => {
   const zk = Object.keys(UI_TEXT.zh).sort();
   assert.deepEqual(zk, Object.keys(UI_TEXT.en).sort());
-  assert.equal(zk.length, 20);
+  assert.equal(zk.length, 22);
   for (const k of zk) {
     for (const lang of LANGS) {
       assert.equal(typeof UI_TEXT[lang][k], 'string');
@@ -118,4 +120,11 @@ test('introContent', () => {
   assert.equal(introContent('zh'), INTRO);
   assert.equal(introContent('en'), INTRO_EN);
   assert.equal(introContent('fr'), INTRO);
+});
+
+test('t：收合鈕的文字標籤中英都有', () => {
+  assert.equal(t('zh', 'collapseList'), '收起構造清單');
+  assert.equal(t('zh', 'expandList'), '展開構造清單');
+  assert.equal(t('en', 'collapseList'), 'Collapse structure list');
+  assert.equal(t('en', 'expandList'), 'Expand structure list');
 });

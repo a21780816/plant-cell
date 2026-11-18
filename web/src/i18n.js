@@ -30,6 +30,8 @@ export const UI_TEXT = {
     endQuiz: '結束測驗',
     fallback: '這個瀏覽器無法顯示 3D 內容，請改用新版的 Chrome 開啟。',
     loadFail: '模型載入失敗，請重新整理頁面再試一次。',
+    collapseList: '收起構造清單',
+    expandList: '展開構造清單',
   },
   en: {
     title: 'Plant Cell',
@@ -52,6 +54,8 @@ export const UI_TEXT = {
     endQuiz: 'End quiz',
     fallback: "This browser can't display 3D content. Please open this page in a recent version of Chrome.",
     loadFail: 'The model failed to load. Please refresh the page and try again.',
+    collapseList: 'Collapse structure list',
+    expandList: 'Expand structure list',
   },
 };
 

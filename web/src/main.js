@@ -17,7 +17,7 @@ import { createLabels } from './labels.js';
 import { createCallout, calloutGeometry, calloutTargetOf } from './callout.js';
 import { createQuiz } from './quiz.js';
 import { mountPanel } from './ui/panel.js';
-import { mountList } from './ui/list.js';
+import { mountList, mountListToggle } from './ui/list.js';
 import { mountIntro } from './ui/intro.js';
 import { mountToolbar } from './ui/toolbar.js';
 import { mountLangSwitch } from './ui/lang-switch.js';
@@ -181,6 +181,9 @@ async function main() {
       // narrow：選取後清單被面板取代（display:none），焦點會掉回 body；移到面板的關閉鈕
       if (layoutCtl.current.mode === 'narrow' && store.getState().selected) document.getElementById('panel-close').focus({ preventScroll: true });
     },
+  });
+  const listToggle = mountListToggle(document.getElementById('list-toggle'), {
+    onToggle: () => store.dispatch({ type: 'toggleList' }),
   });
   view.resize(); // 清單有內容之後它的高度才是真的：重新計算可用範圍與取景
   const toolbar = mountToolbar(document.getElementById('toolbar'), {
@@ -372,9 +375,17 @@ async function main() {
       : entry.instances.find((r) => r.userData.inst === sel.inst) ?? entry.rep;
   };
 
-  let prev = { phase: 'intro', selected: undefined, hovered: undefined, exploded: false, labels: false, lang: null };
+  let prev = { phase: 'intro', selected: undefined, hovered: undefined, exploded: false, labels: false, lang: null, listCollapsed: false };
   function render(s) {
     document.body.dataset.phase = s.phase; // 清單等介面依階段顯示（CSS）
+    document.body.dataset.list = s.listCollapsed ? 'collapsed' : 'open';
+    listToggle.set(s.listCollapsed, s.lang);
+    // 清單收合／展開（或進出測驗，清單照展開的高度佔位）會改變可用範圍：重算版面，鏡頭怎麼跟上留到本次 render 的最後決定
+    let reframe = null;
+    if (s.listCollapsed !== prev.listCollapsed || s.phase !== prev.phase) {
+      const before = layoutKey(layoutCtl.current);
+      if (layoutKey(layoutCtl.update()) !== before) reframe = view.relayout();
+    }
     if (s.lang !== prev.lang) {
       applyDocumentText(s.lang);
       list.setLang(s.lang);
@@ -442,6 +453,12 @@ async function main() {
       }
     }
     if (enteringQuiz) moves.home(explodeChanged ? EXPLODE_MOVE : undefined); // 進入測驗：鏡頭平順回到一般（未拆解）的預設位置
+    // 本次 render 沒開始別的鏡頭動畫（進入測驗、拆解、取消選取等會每格重讀 defaultPose，已經用新版面）才處理：
+    // 鏡頭在預設位置就平順回到新的預設；動過但不是特寫就依預設距離的比例放大縮小；特寫中只靠平移緩動。
+    if (reframe && !moves.busy) {
+      if (reframe.atDefault) moves.home();
+      else if (!(s.selected && !isShellSel(s.selected)) && Math.abs(reframe.scale - 1) > 1e-6) moves.scaleDistance(reframe.scale);
+    }
     prev = s;
   }
   store.subscribe(render);

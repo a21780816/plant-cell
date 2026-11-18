@@ -212,3 +212,31 @@ test('以英文起始的 store，其他動作不改 lang', () => {
     assert.equal(store.getState().lang, 'en', `${action.type} 之後`);
   }
 });
+
+test('initialState.listCollapsed 是 false', () => {
+  assert.equal(initialState.listCollapsed, false);
+});
+
+test('toggleList 在 intro、explore、quiz 階段都有效，只改 listCollapsed', () => {
+  const quiz = reduce(explore, { type: 'quizStart' });
+  for (const s of [initialState, explore, quiz]) {
+    const a = reduce(s, { type: 'toggleList' });
+    assert.equal(a.listCollapsed, true);
+    assert.deepEqual({ ...a, listCollapsed: s.listCollapsed }, s);
+    assert.equal(reduce(a, { type: 'toggleList' }).listCollapsed, false);
+    assert.equal(s.listCollapsed, false);
+  }
+});
+
+test('其他動作不改 listCollapsed', () => {
+  const store = createStore({ ...initialState, listCollapsed: true });
+  for (const action of [
+    { type: 'start' }, { type: 'select', id: 'nucleus', inst: 0 }, { type: 'hover', id: 'vacuole', inst: 0 },
+    { type: 'unhover' }, { type: 'deselect' }, { type: 'toggleExplode' }, { type: 'toggleLabels' },
+    { type: 'setLang', lang: 'en' }, { type: 'quizStart' }, { type: 'quizReveal', id: 'golgi', correct: false },
+    { type: 'quizNext' }, { type: 'quizExit' }, { type: 'noop' },
+  ]) {
+    store.dispatch(action);
+    assert.equal(store.getState().listCollapsed, true, `${action.type} 之後`);
+  }
+});
