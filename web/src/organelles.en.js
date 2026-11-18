@@ -24,7 +24,7 @@ export const ORGANELLES_EN = {
   },
   cell_membrane: {
     tagline: 'A phospholipid bilayer membrane with embedded proteins and selective permeability',
-    body: 'The plasma membrane is a phospholipid bilayer with embedded proteins, lying tight against the inner side of the primary wall. Its hydrophobic core makes it hard for ions and larger polar molecules to cross directly, so they must be transported through channel proteins, carrier proteins, or pumps; this is selective permeability. Cellulose synthase complexes in the membrane synthesize cellulose, and the proton pump pushes protons out of the cell, establishing the electrochemical gradient that drives many kinds of transport.',
+    body: 'The plasma membrane is a phospholipid bilayer with embedded proteins, pressed tightly against the inner surface of the primary wall. Its hydrophobic core makes it hard for ions and larger polar molecules to cross directly, so they must be transported through channel proteins, carrier proteins, or pumps; this is selective permeability. Cellulose synthase complexes in the membrane synthesize cellulose, and the proton pump pumps protons out of the cell, establishing the electrochemical gradient that drives many kinds of transport.',
     fact: 'The plasma membrane proton pump acidifies the cell wall; in the acid growth hypothesis, this is the basis of the wall loosening that allows the cell to elongate.',
   },
   cytoplasm: {
@@ -34,12 +34,12 @@ export const ORGANELLES_EN = {
   },
   nucleus: {
     tagline: 'Houses the genome inside a double-membrane nuclear envelope and regulates gene expression',
-    body: 'The nucleus is enclosed by a double-membrane nuclear envelope, whose outer membrane is continuous with the rough endoplasmic reticulum (rough ER). Nuclear pores in the envelope selectively control the passage of RNA and proteins. The nucleus contains chromatin and the nucleolus; DNA is replicated and transcribed here, and the messenger RNA (mRNA) produced is exported through the nuclear pores to the cytoplasm for translation. In a mature mesophyll cell, the nucleus is often pushed by the vacuole toward the side next to the cell wall. Most proteins of the cell are encoded by nuclear genes, whereas chloroplasts and mitochondria have a small number of genes of their own.',
-    fact: 'When a cell divides, the nuclear envelope breaks down and its membrane components merge into the ER; at telophase, ER membranes surround the chromosomes and reassemble into a nuclear envelope.',
+    body: 'The nucleus is enclosed by a double-membrane nuclear envelope, whose outer membrane is continuous with the rough endoplasmic reticulum (rough ER). Nuclear pores in the envelope selectively control the passage of RNA and proteins. The nucleus contains chromatin and the nucleolus; DNA is replicated and transcribed here, and the messenger RNA (mRNA) produced is exported through the nuclear pores to the cytoplasm for translation. In a mature mesophyll cell, the nucleus is often pushed by the vacuole to one side of the cell, close to the cell wall. Most proteins of the cell are encoded by nuclear genes, whereas chloroplasts and mitochondria have a small number of genes of their own.',
+    fact: 'When a cell divides, the nuclear envelope breaks down and its membrane components merge into the endoplasmic reticulum (ER); at telophase, ER membranes surround the chromosomes and reassemble into a nuclear envelope.',
   },
   nucleolus: {
     tagline: 'A region within the nucleus where ribosomal RNA is transcribed and ribosomal subunits are assembled',
-    body: 'The nucleolus is a region inside the nucleus that is not membrane-bound. It is formed by the aggregation of the genes for ribosomal RNA (rRNA), rRNA that is being transcribed and processed, and proteins. Here the rRNA combines with ribosomal proteins imported from the cytoplasm to form the large and small subunits, which are then exported to the cytoplasm through the nuclear pores. The nucleolus is not a fixed structure: its size changes with the physiological state of the cell, and in cells with a high demand for protein synthesis it is often more prominent.',
+    body: 'The nucleolus is a region inside the nucleus that is not membrane-bound. It is an aggregate of the genes for ribosomal RNA (rRNA), rRNA that is being transcribed and processed, and proteins. Here the rRNA combines with ribosomal proteins imported from the cytoplasm to form the large and small subunits, which are then exported to the cytoplasm through the nuclear pores. The nucleolus is not a fixed structure: its size changes with the physiological state of the cell, and in cells with a high demand for protein synthesis it is often more prominent.',
     fact: 'During prophase of cell division, the nucleolus disperses as chromatin condenses, and it re-forms only at telophase.',
   },
   chromatin: {
@@ -69,7 +69,7 @@ export const ORGANELLES_EN = {
   },
   mitochondrion: {
     tagline: 'A double-membrane structure that makes ATP by oxidative phosphorylation',
-    body: 'A mitochondrion is enclosed by an inner and an outer membrane; the inner membrane is folded inward into cristae to increase its surface area, and the space it encloses is called the matrix. The citric acid cycle takes place in the matrix, whereas the electron transport chain and ATP synthase are located in the inner membrane and use the proton gradient established by electron transport to synthesize ATP. ATP is a molecule that carries energy, and it supplies the energy-requiring reactions of the cell. In mesophyll cells, mitochondria also take part in photorespiration.',
+    body: 'A mitochondrion is enclosed by an inner and an outer membrane; the inner membrane is folded inward into cristae to increase its surface area, and the space it encloses is called the matrix. The citric acid cycle takes place in the matrix, whereas the electron transport chain and ATP synthase are located in the inner membrane and use the proton gradient established by electron transport to synthesize ATP. ATP is an energy-carrying molecule that powers the cell\'s energy-requiring reactions. In mesophyll cells, mitochondria also take part in photorespiration.',
     fact: 'Mitochondria and chloroplasts both have a double membrane and their own DNA, and are thought to have originated from bacteria engulfed by early eukaryotic cells; this is the endosymbiont theory.',
   },
   chloroplast: {
@@ -79,7 +79,7 @@ export const ORGANELLES_EN = {
   },
   vacuole: {
     tagline: 'A large membranous sac that maintains turgor pressure and stores solutes',
-    body: 'The vacuole is enclosed by a single membrane, the tonoplast, and contains water, ions, sugars, organic acids, pigments, and other substances, as well as hydrolytic enzymes that can break down old components of the cell. Proton pumps and transport proteins in the tonoplast move solutes into the vacuole, so that the cell takes up water by osmosis and develops turgor pressure, which drives cell elongation and, together with the cell wall, helps the plant stay upright. In a mature cell the vacuole often takes up most of the volume; to make the other structures easier to see, this model deliberately shows it smaller, so it is not shown in true proportion.',
+    body: 'The vacuole is enclosed by a single membrane, the tonoplast, and contains water, ions, sugars, organic acids, pigments, and other substances, as well as hydrolytic enzymes that can break down old components of the cell. Proton pumps and transport proteins in the tonoplast move solutes into the vacuole, so that the cell takes up water by osmosis and develops turgor pressure, which drives cell elongation and, together with the cell wall, helps the plant stay upright. In a mature cell the vacuole often takes up most of the volume; to make the other structures easier to see, this model deliberately shows it smaller than it really is, so it is not to scale.',
     fact: 'The red, purple, and blue colors of flowers and fruits mostly come from anthocyanins stored in the vacuole, and the color also changes with the pH of the vacuole.',
   },
   transvacuolar_strand: {
@@ -94,7 +94,7 @@ export const ORGANELLES_EN = {
   },
   oil_body: {
     tagline: 'A small oil-storage sphere in which a phospholipid monolayer encloses triacylglycerols',
-    body: 'The core of an oil body is triacylglycerols, surrounded by only a single phospholipid monolayer. Triacylglycerols are generally thought to accumulate between the two leaflets of the endoplasmic reticulum (ER) membrane and then bud off toward the cytoplasm, so that only one leaflet is taken along. Oilseeds have numerous oil bodies, whose surface is studded with oleosins that keep the oil droplets from fusing; during germination the oil is converted to sugars through β-oxidation, the glyoxylate cycle, and gluconeogenesis. Mesophyll cells also have a small number of smaller oil bodies (also called lipid droplets), whose surface proteins differ from those of seed oil bodies.',
+    body: 'The core of an oil body is triacylglycerols, surrounded by only a phospholipid monolayer. Triacylglycerols are generally thought to accumulate between the two leaflets of the endoplasmic reticulum (ER) membrane and the droplet then buds off into the cytoplasm, taking only one leaflet with it. Oilseeds have numerous oil bodies, whose surface is studded with oleosins that keep the oil droplets from fusing; during germination the oil is converted to sugars through β-oxidation, the glyoxylate cycle, and gluconeogenesis. Mesophyll cells also have a small number of smaller oil bodies (also called lipid droplets), whose surface proteins differ from those of seed oil bodies.',
     fact: 'Oleosins help keep oil droplets separate, instead of fusing into large lumps of oil, even when the seed is dry or cold.',
   },
   plasmodesmata: {
