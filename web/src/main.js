@@ -453,9 +453,10 @@ async function main() {
       }
     }
     if (enteringQuiz) moves.home(explodeChanged ? EXPLODE_MOVE : undefined); // 進入測驗：鏡頭平順回到一般（未拆解）的預設位置
-    // 本次 render 沒開始別的鏡頭動畫（進入測驗、拆解、取消選取等會每格重讀 defaultPose，已經用新版面）才處理：
+    // 本次 render 沒開始別的鏡頭動畫（進入測驗、拆解、取消選取等會每格重讀 defaultPose，已經用新版面）才處理；
+    // 進行中的若是上一次的尺度動畫（收合動畫途中再切換），照樣處理，新比例會乘進它的終點：
     // 鏡頭在預設位置就平順回到新的預設；動過但不是特寫就依預設距離的比例放大縮小；特寫中只靠平移緩動。
-    if (reframe && !moves.busy) {
+    if (reframe && (!moves.busy || moves.scaling)) {
       if (reframe.atDefault) moves.home();
       else if (!(s.selected && !isShellSel(s.selected)) && Math.abs(reframe.scale - 1) > 1e-6) moves.scaleDistance(reframe.scale);
     }

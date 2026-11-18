@@ -47,11 +47,13 @@ export function createCameraMoves({ camera, controls, defaultPose = null, setUse
 
   // 只改距離：目標點與觀看方向維持開始時的樣子，長度乘上 k（夾在 controls 的 min／max 之間）。
   // 結束時不重設 userMoved，因為鏡頭仍是使用者（或自轉）決定的位置。
+  // 進行中的也是尺度動畫時，新的 k 乘進「原本的終點」（而不是目前的位置），再從目前位置平滑接過去，
+  // 所以連按兩次收合／展開，距離會回到原本的遠近。
   function scaleDistance(k, opts) {
-    begin(() => {
-      const len = Math.min(controls.maxDistance, Math.max(controls.minDistance, move.len0 * k));
-      return { target: move.target0, len, dir: move.dir0 };
-    }, null, opts);
+    const base = move && move.scaleEnd !== undefined ? move.scaleEnd : camera.position.distanceTo(controls.target);
+    const endLen = Math.min(controls.maxDistance, Math.max(controls.minDistance, base * k));
+    begin(() => ({ target: move.target0, len: endLen, dir: move.dir0 }), null, opts);
+    move.scaleEnd = endLen;
   }
 
   function update(dt) {
@@ -77,5 +79,6 @@ export function createCameraMoves({ camera, controls, defaultPose = null, setUse
   return {
     focus, home, scaleDistance, update,
     get busy() { return move !== null; },
+    get scaling() { return move !== null && move.scaleEnd !== undefined; }, // 進行中的是 scaleDistance 的動畫
   };
 }

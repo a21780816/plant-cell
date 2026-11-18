@@ -138,6 +138,10 @@ for (const [W, H, mode] of [[1280, 800, 'wide'], [900, 420, 'short']]) {
       const d0 = await camDistance(page);
       const w0 = await info(page, '#list-wrap');
       if (mode === 'wide') {
+        const ti = await info(page, '#list-title');
+        console.log('L1 title offset', center(ti).x - center(w0).x);
+        assert.ok(Math.abs(center(ti).x - center(w0).x) <= 0.5, `展開時標題偏離清單中心 ${center(ti).x - center(w0).x}`);
+        console.log('L1 wide 展開高度', w0.height);
         assert.deepEqual(R0, { left: 0, top: 16, right: 1280, bottom: 674 });
         assert.ok(Math.abs(d0 - 22.17) < 0.01, `d0 ${d0}`);
       } else {
@@ -247,15 +251,18 @@ test('L4 英文：收合鈕的文字標籤，切換語言時跟著換', async ()
   try {
     await startAndSettle(page);
     assert.equal(await page.evaluate("document.getElementById('list-toggle').getAttribute('aria-label')"), 'Collapse structure list');
+    assert.equal(await page.evaluate("document.getElementById('list-toggle').title"), 'Collapse structure list');
     await clickCenter(page, '#list-toggle');
     await settled(page);
     assert.equal(await page.evaluate("document.getElementById('list-toggle').getAttribute('aria-label')"), 'Expand structure list');
+    assert.equal(await page.evaluate("document.getElementById('list-toggle').title"), 'Expand structure list');
     assert.ok((await info(page, '#list-wrap')).height <= 44);
     assert.equal(await page.evaluate("document.getElementById('list-title').textContent"), 'Cell structures');
     await page.screenshot('assets/preview/web-list-collapsed-en.png');
     await clickCenter(page, '#toolbar [data-lang="zh"]');
     await frames(page, 3);
     assert.equal(await page.evaluate("document.getElementById('list-toggle').getAttribute('aria-label')"), '展開構造清單');
+    assert.equal(await page.evaluate("document.getElementById('list-toggle').title"), '展開構造清單');
     assert.equal((await info(page, '#list')).shown, false);
     assert.ok((await info(page, '#list-wrap')).height <= 44);
   } finally { await page.close(); }
@@ -363,4 +370,37 @@ test('L8 特寫中收合：距離不變、只平移；面板不蓋住收合後�
     assert.ok(panel.bottom <= wrap.top + 0.5, `面板下緣 ${panel.bottom} 超過清單上緣 ${wrap.top}`);
     assert.deepEqual(page.consoleErrors, []);
   } finally { await page.close(); }
+});
+
+test('L9 收合動畫進行中再按一次：拖曳過的鏡頭回到原本的距離；沒動過鏡頭也回到預設取景', async () => {
+  const a = await open(1280, 800);
+  try {
+    await startAndSettle(a);
+    await a.drag(640, 400, 820, 330);
+    await settled(a);
+    const R0 = await rect(a);
+    const d = await camDistance(a);
+    await clickCenter(a, '#list-toggle');
+    await sleep(250);
+    assert.equal(await a.evaluate('window.__cell.cameraBusy()'), true, '第一段動畫應還在跑');
+    await clickCenter(a, '#list-toggle');
+    await settled(a);
+    const dn = await camDistance(a);
+    console.log('L9 拖曳後連按', JSON.stringify({ d, dn }));
+    assert.ok(Math.abs(dn - d) <= 0.01 * d, `距離 ${dn} 應回到 ${d}`);
+    assert.deepEqual(await rect(a), R0);
+    assert.equal(await a.evaluate('window.__cell.store.getState().listCollapsed'), false);
+  } finally { await a.close(); }
+  const b = await open(1280, 800);
+  try {
+    await startAndSettle(b);
+    await clickCenter(b, '#list-toggle');
+    await sleep(250);
+    await clickCenter(b, '#list-toggle');
+    await settled(b);
+    const dn = await camDistance(b);
+    console.log('L9 預設位置連按', dn);
+    assert.deepEqual(await rect(b), { left: 0, top: 16, right: 1280, bottom: 674 });
+    assert.ok(Math.abs(dn - 22.17) <= 0.01, `距離 ${dn}`);
+  } finally { await b.close(); }
 });

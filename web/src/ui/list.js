@@ -65,7 +65,11 @@ export function mountListToggle(button, { onToggle }) {
     set(collapsed, lang) {
       const c = !!collapsed;
       if (!shown || shown.collapsed !== c) button.setAttribute('aria-expanded', String(!c));
-      if (!shown || shown.collapsed !== c || shown.lang !== lang) button.setAttribute('aria-label', t(lang, c ? 'expandList' : 'collapseList'));
+      if (!shown || shown.collapsed !== c || shown.lang !== lang) {
+        const text = t(lang, c ? 'expandList' : 'collapseList');
+        button.setAttribute('aria-label', text);
+        button.title = text; // 滑鼠使用者的文字提示
+      }
       shown = { collapsed: c, lang };
     },
   };

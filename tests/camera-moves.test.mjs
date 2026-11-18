@@ -50,3 +50,31 @@ test('scaleDistance：controls 的 start 事件（使用者拖曳或縮放）立
   moves.update(0.4);
   assert.ok(camera.position.distanceTo(p) === 0);
 });
+
+test('scaleDistance：進行中再呼叫會把新比例乘進終點，跑完回到開始的長度', () => {
+  const { camera, controls, moves, dist } = setup();
+  moves.scaleDistance(0.8);
+  moves.update(0.4);
+  moves.scaleDistance(1.25);
+  assert.ok(moves.busy);
+  moves.update(0.8);
+  assert.equal(moves.busy, false);
+  assert.ok(Math.abs(dist() - 10) < 1e-6, `距離 ${dist()}`);
+  assert.ok(camera.position.clone().sub(controls.target).normalize().dot(DIR) > 1 - 1e-9);
+  assert.ok(controls.target.distanceTo(TARGET) < 1e-12);
+});
+
+test('scaleDistance：進行中的不是尺度動畫（focus、home）時，照舊從目前位置另起一段', () => {
+  const { camera, controls, moves, dist } = setup();
+  const home = createCameraMoves({
+    camera, controls,
+    defaultPose: () => ({ target: TARGET.clone(), position: TARGET.clone().addScaledVector(DIR, 20) }),
+  });
+  home.home();
+  home.update(0.4);
+  const d = dist();
+  home.scaleDistance(0.5); // 取代 home：從目前長度起算
+  home.update(0.8);
+  assert.ok(Math.abs(dist() - Math.max(2.5, d * 0.5)) < 1e-6, `距離 ${dist()} 應為 ${d * 0.5}`);
+  void moves;
+});
