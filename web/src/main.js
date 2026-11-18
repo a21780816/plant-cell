@@ -222,32 +222,34 @@ async function main() {
       return el && !el.hidden ? el.getBoundingClientRect() : null;
     }),
   });
-  // 標籤在每次繪製之前更新（此時鏡頭與模型矩陣都已是這一格要畫的狀態），才不會落後一格
-  view.scene.onBeforeRender = () => { labels.update(); updateCallout(); };
+  // 標籤與引線在每次繪製之前更新（此時鏡頭與模型矩陣都已是這一格要畫的狀態），才不會落後一格。
+  // 引線先做（它要讀版面）、標籤後做（它會寫 transform 與 SVG 屬性）：讀寫不交錯，不會每格多一次強制重排。
+  view.scene.onBeforeRender = () => { updateCallout(); labels.update(); };
   const callout = createCallout(document.getElementById('callout'));
   const calloutV = new Vector3();
-  // 介紹卡片的引線：只在探索階段、有選取且卡片顯示時才畫
+  const panelEl = document.getElementById('panel');
+  const panelDotEl = document.getElementById('panel-dot');
+  const CALLOUT_NEUTRAL = '#B8B4AC';
+  const CALLOUT_OFF = { visible: false, x1: 0, y1: 0, x2: 0, y2: 0 };
+  // 介紹卡片的引線：只在探索階段、有選取且卡片顯示時才畫；不啟用時不讀任何版面
   function updateCallout() {
     const s = store.getState();
-    const panelEl = document.getElementById('panel');
-    const active = s.phase === 'explore' && s.selected && !panelEl.hidden;
+    if (s.phase !== 'explore' || !s.selected || panelEl.hidden) { callout.draw(CALLOUT_OFF, CALLOUT_NEUTRAL); return; }
     let target = null;
-    if (active) {
-      const obj = calloutTargetOf(index.byId.get(s.selected.id), s.selected);
-      if (obj) {
-        const p = projectToClient(obj.getWorldPosition(calloutV));
-        if (p.z >= -1 && p.z <= 1) target = { x: p.x, y: p.y }; // 鏡頭背面或超出遠近平面就不畫
-      }
+    const obj = calloutTargetOf(index.byId.get(s.selected.id), s.selected);
+    if (obj) {
+      const p = projectToClient(obj.getWorldPosition(calloutV));
+      if (p.z >= -1 && p.z <= 1) target = { x: p.x, y: p.y }; // 鏡頭背面或超出遠近平面就不畫
     }
-    const d = active ? document.getElementById('panel-dot').getBoundingClientRect() : null;
+    const d = panelDotEl.getBoundingClientRect();
     const geo = calloutGeometry({
       mode: layoutCtl.current.mode,
-      panel: active ? panelEl.getBoundingClientRect() : null,
-      dot: d ? { x: (d.left + d.right) / 2, y: (d.top + d.bottom) / 2 } : null,
+      panel: panelEl.getBoundingClientRect(),
+      dot: { x: (d.left + d.right) / 2, y: (d.top + d.bottom) / 2 },
       target,
       stage: canvas.getBoundingClientRect(),
     });
-    callout.draw(geo, active ? (palette[s.selected.id]?.main ?? '#B8B4AC') : '#B8B4AC');
+    callout.draw(geo, palette[s.selected.id]?.main ?? CALLOUT_NEUTRAL);
   }
   const hoverName = document.getElementById('hover-name');
   loading.hidden = true; // 模型已載入：開場卡片接手

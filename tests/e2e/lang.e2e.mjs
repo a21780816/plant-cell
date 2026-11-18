@@ -87,6 +87,9 @@ test('L1 預設中文，不看瀏覽器語言與網址；開場卡片切到英�
     assert.equal(await page.evaluate('document.title'), '植物細胞');
     const btns = () => page.evaluate(`[...document.querySelectorAll('#intro .lang-switch button')].map((b) => [b.textContent, b.getAttribute('aria-pressed')])`);
     assert.deepEqual(await btns(), [['中文', 'true'], ['English', 'false']]);
+    // 無障礙分組：兩組語言切換鈕都有 role=group 與固定的 aria-label（不隨語言變）
+    const groups = () => page.evaluate(`[...document.querySelectorAll('.lang-switch')].map((g) => [g.getAttribute('role'), g.getAttribute('aria-label')])`);
+    assert.deepEqual(await groups(), [['group', '語言 / Language'], ['group', '語言 / Language']]);
     await clickSel(page, '#intro [data-lang="en"]');
     await frames(page, 3);
     assert.equal(await textOf(page, '#intro-title'), INTRO_EN.title);
@@ -101,6 +104,7 @@ test('L1 預設中文，不看瀏覽器語言與網址；開場卡片切到英�
     assert.equal(await page.evaluate('window.__cell.lidOpen()'), false);
     assert.equal(await page.evaluate('document.activeElement.dataset.lang'), 'en');
     assert.deepEqual(await btns(), [['中文', 'false'], ['English', 'true']]);
+    assert.deepEqual(await groups(), [['group', '語言 / Language'], ['group', '語言 / Language']]);
     await page.screenshot('assets/preview/web-lang-intro-en.png');
     assert.deepEqual(page.consoleErrors, []);
   } finally {

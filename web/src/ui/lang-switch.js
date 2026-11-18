@@ -5,6 +5,8 @@ import { LANGS, HTML_LANG, LANG_LABELS } from '../i18n.js';
 export function mountLangSwitch(container, { onChange = () => {} } = {}) {
   const el = document.createElement('div');
   el.className = 'lang-switch';
+  el.setAttribute('role', 'group');
+  el.setAttribute('aria-label', '語言 / Language'); // 固定雙語，不隨語言變
   let current = null;
   const buttons = new Map();
   for (const lang of LANGS) {

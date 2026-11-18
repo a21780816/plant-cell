@@ -194,12 +194,12 @@ export function createLabels({
         it.dot.classList.toggle('selected', on);
       }
     },
-    // 換語言：更新藥丸文字；可見時重新量大小、清掉每個 prev（讓版面重新找位置）並立刻重排
+    // 換語言：更新藥丸文字；可見時先解除全部隱藏（hidden 的藥丸量不到大小，會被當成一個點）再量、清掉每個 prev 並立刻重排
     setNames(nameOfNext) {
       for (const it of items) it.el.textContent = nameOfNext(it.id);
       if (!visible) return;
+      for (const it of items) { it.el.hidden = false; it.g.setAttribute('visibility', 'visible'); it.shown = true; it.prev = null; }
       sizes();
-      for (const it of items) it.prev = null;
       update();
     },
     update,
