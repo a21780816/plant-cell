@@ -94,7 +94,7 @@ export const ORGANELLES_EN = {
   },
   oil_body: {
     tagline: 'A small oil-storage sphere in which a phospholipid monolayer encloses triacylglycerols',
-    body: 'The core of an oil body is triacylglycerols, surrounded by only a phospholipid monolayer. Triacylglycerols are generally thought to accumulate between the two leaflets of the endoplasmic reticulum (ER) membrane and the droplet then buds off into the cytoplasm, taking only one leaflet with it. Oilseeds have numerous oil bodies, whose surface is studded with oleosins that keep the oil droplets from fusing; during germination the oil is converted to sugars through β-oxidation, the glyoxylate cycle, and gluconeogenesis. Mesophyll cells also have a small number of smaller oil bodies (also called lipid droplets), whose surface proteins differ from those of seed oil bodies.',
+    body: 'The core of an oil body is triacylglycerols, surrounded by only a phospholipid monolayer. Triacylglycerols are generally thought to accumulate between the two leaflets of the endoplasmic reticulum (ER) membrane, forming a droplet that then buds off into the cytoplasm, taking only one leaflet with it. Oilseeds have numerous oil bodies, whose surface is studded with oleosins that keep the oil droplets from fusing; during germination the oil is converted to sugars through β-oxidation, the glyoxylate cycle, and gluconeogenesis. Mesophyll cells also have a small number of smaller oil bodies (also called lipid droplets), whose surface proteins differ from those of seed oil bodies.',
     fact: 'Oleosins help keep oil droplets separate, instead of fusing into large lumps of oil, even when the seed is dry or cold.',
   },
   plasmodesmata: {

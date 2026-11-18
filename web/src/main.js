@@ -51,7 +51,7 @@ function showFallback(e, key = 'fallback', what = '無法建立 WebGL') {
 // wide／short：畫布佔滿視窗，模型放進「可用範圍」＝視窗扣掉頂端 16 像素與底部一條保留帶（構造清單的實際高度加留白；
 // 測驗卡片出現在同一個位置，所以三個階段的取景一樣）。narrow：畫布只佔視窗高度的 52%，可用範圍扣掉頂端給工具列的空間
 // （工具列換行變高時，可用範圍的上緣跟著它的下緣走）。
-// wide／short：工具列與介紹面板在水平方向會重疊時（平板寬度），面板的頂端移到工具列下緣之下（--panel-top／--panel-dy）。
+// wide／short：工具列與介紹面板在水平方向會重疊時（平板寬度），面板的頂端移到工具列下緣之下（CSS 變數 --panel-dy）。
 // 每次視窗縮放、切換語言、工具列大小改變時由 scene.js 的 resize() 呼叫 update()：它先套用模式與 CSS 變數，再回傳畫布大小與可用範圍。
 const layoutCtl = (() => {
   const listWrap = document.getElementById('list-wrap');
@@ -236,7 +236,7 @@ async function main() {
     }),
   });
   // 標籤與引線在每次繪製之前更新（此時鏡頭與模型矩陣都已是這一格要畫的狀態），才不會落後一格。
-  // 引線先做（它要讀版面）、標籤後做（它會寫 transform 與 SVG 屬性）：讀寫不交錯，不會每格多一次強制重排。
+  // 引線先做（它要讀版面）、標籤後做（它會寫 transform 與 SVG 屬性）：沒有選取時完全不讀版面；引線顯示時 draw 的寫入仍可能讓標籤的讀取多一次重排，這裡只是減少交錯。
   view.scene.onBeforeRender = () => { updateCallout(); labels.update(); };
   const callout = createCallout(document.getElementById('callout'));
   const calloutV = new Vector3();
@@ -279,15 +279,19 @@ async function main() {
     mountLangSwitch(document.getElementById('intro-card'), { onChange: setLanguage }),
     mountLangSwitch(document.getElementById('toolbar'), { onChange: setLanguage }),
   ];
-  // 工具列大小改變（切換語言、按鈕文字或粗細改變、視窗縮放造成換行）時重算取景；只在寬或高真的變了才觸發（resize 不會改變工具列大小，不會循環）
+  // 工具列大小改變（切換語言、按鈕文字或粗細改變、視窗縮放造成換行）時，先重算版面；只有版面結果（模式、畫布大小、可用範圍）
+  // 真的變了才重算取景。否則拆解／組合時英文按鈕文字寬度改變，會讓進行中的平移緩動一格跳到終點。
+  // 只在寬或高真的變了才處理（resize 不會改變工具列大小，不會循環）。
   const toolbarBox = document.getElementById('toolbar');
+  const layoutKey = (l) => `${l.mode}|${l.width}|${l.height}|${l.rect.left}|${l.rect.top}|${l.rect.right}|${l.rect.bottom}`;
   let tbW = -1;
   let tbH = -1;
   new ResizeObserver(() => {
     if (toolbarBox.offsetWidth === tbW && toolbarBox.offsetHeight === tbH) return;
     tbW = toolbarBox.offsetWidth;
     tbH = toolbarBox.offsetHeight;
-    view.resize();
+    const before = layoutKey(layoutCtl.current);
+    if (layoutKey(layoutCtl.update()) !== before) view.resize(); // update() 同時更新 --panel-dy
   }).observe(toolbarBox);
 
   const isPickable = (id) => {

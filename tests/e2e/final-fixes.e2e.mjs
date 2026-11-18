@@ -186,6 +186,8 @@ for (const [W, H, lang] of F3_CASES) {
       })`);
       assert.ok(hits.length >= 5, `工具列應有 5 顆按鈕（拆解、名稱、測驗、兩顆語言）：${hits.length}`);
       for (const h of hits) assert.equal(h.ok, true, `工具列按鈕「${h.text}」中心被別的元素蓋住`);
+      const list = await rectOf(page, '#list-wrap');
+      assert.ok(pn.bottom <= list.top + 0.5, `#panel 下緣 ${pn.bottom} 應在 #list-wrap 上緣 ${list.top} 之上（max-height 要扣掉 --panel-dy）`);
       assert.ok(pn.left >= -0.5 && pn.top >= -0.5 && pn.right <= W + 0.5 && pn.bottom <= H + 0.5, `#panel 應完整在視窗內：${JSON.stringify(pn)}`);
       const scrolled = await page.evaluate(`(() => {
         const p = document.getElementById('panel');
@@ -217,5 +219,34 @@ test('F3 1280×800 中文與英文選取後，面板的 top 仍是 16', async ()
     } finally {
       await page.close();
     }
+  }
+});
+
+// ---- N1：英文按拆解時，工具列變寬不應觸發沒必要的重算，畫面平移要維持緩動 ----
+test('N1 英文 1280×800 按拆解：畫面平移是緩動的，不會一格跳動；英文 390×800 的 rect.top 仍是 48', async () => {
+  const page = await boot({ width: 1280, height: 800, initScript: EN_INIT });
+  try {
+    await sleep(300);
+    await clickSel(page, '#btn-explode');
+    const samples = await page.evaluate(`new Promise((res) => { const out = []; let n = 40; const f = () => { const v = window.__cell.view.camera.view; out.push(v ? [v.offsetX, v.offsetY] : null); if (--n <= 0) res(out); else requestAnimationFrame(f); }; requestAnimationFrame(f); })`);
+    assert.ok(samples.every((s) => s), '相機應有 view offset');
+    let maxStep = 0;
+    for (let i = 1; i < samples.length; i++) maxStep = Math.max(maxStep, Math.abs(samples[i][0] - samples[i - 1][0]), Math.abs(samples[i][1] - samples[i - 1][1]));
+    const total = Math.max(Math.abs(samples.at(-1)[0] - samples[0][0]), Math.abs(samples.at(-1)[1] - samples[0][1]));
+    console.log(`N1 maxStep ${maxStep.toFixed(2)} total ${total.toFixed(2)}`);
+    assert.ok(maxStep <= 6, `相鄰兩格的平移變化應 ≤ 6px：${maxStep}`);
+    assert.ok(total > 5, `整段應確實有平移：${total}`);
+  } finally {
+    await page.close();
+  }
+  const page2 = await boot({ width: 390, height: 800, initScript: EN_INIT });
+  try {
+    await sleep(300);
+    await clickSel(page2, '#btn-explode');
+    await page2.waitFor('window.__cell.explodeProgress() === 1');
+    await frames(page2, 5);
+    assert.equal((await page2.evaluate('window.__cell.layout()')).rect.top, 48);
+  } finally {
+    await page2.close();
   }
 });
