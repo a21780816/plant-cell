@@ -49,10 +49,14 @@ function showFallback(e, key = 'fallback', what = '無法建立 WebGL') {
 
 // ---- 版面：依 window.innerWidth／innerHeight 決定模式（寫在 body 的 data-layout，CSS 依它排版）----
 // wide／short：畫布佔滿視窗，模型放進「可用範圍」＝視窗扣掉頂端 16 像素與底部一條保留帶（構造清單的實際高度加留白；
-// 測驗卡片出現在同一個位置，所以三個階段的取景一樣）。narrow：畫布只佔上方 52%，可用範圍扣掉頂端給工具列的空間。
-// 每次視窗縮放時由 scene.js 的 resize() 呼叫 update()：它先套用模式與 CSS 變數，再回傳畫布大小與可用範圍。
+// 測驗卡片出現在同一個位置，所以三個階段的取景一樣）。narrow：畫布只佔視窗高度的 52%，可用範圍扣掉頂端給工具列的空間
+// （工具列換行變高時，可用範圍的上緣跟著它的下緣走）。
+// wide／short：工具列與介紹面板在水平方向會重疊時（平板寬度），面板的頂端移到工具列下緣之下（--panel-top／--panel-dy）。
+// 每次視窗縮放、切換語言、工具列大小改變時由 scene.js 的 resize() 呼叫 update()：它先套用模式與 CSS 變數，再回傳畫布大小與可用範圍。
 const layoutCtl = (() => {
   const listWrap = document.getElementById('list-wrap');
+  const toolbarEl = document.getElementById('toolbar');
+  const panelBox = document.getElementById('panel');
   let last = { mode: 'wide', width: 1, height: 1, rect: { left: 0, top: 0, right: 1, bottom: 1 } };
   return {
     update() {
@@ -63,16 +67,25 @@ const layoutCtl = (() => {
       let height = H;
       let rect;
       let band = 0;
+      let panelTop = 0; // 面板頂端要往下移多少（0 = 維持原位）
       if (mode === 'narrow') {
         height = Math.max(1, Math.round(H * NARROW_STAGE));
-        rect = { left: 0, top: Math.min(48, height * 0.2), right: W, bottom: height - 8 };
+        const toolbarBottom = toolbarEl.getBoundingClientRect().bottom;
+        rect = { left: 0, top: Math.max(Math.min(48, height * 0.2), toolbarBottom + 1), right: W, bottom: height - 8 };
       } else {
         band = listWrap.offsetHeight + (mode === 'short' ? 8 : 12) + 8;
         rect = { left: 0, top: 16, right: W, bottom: Math.max(16 + H * 0.3, H - band) };
+        // 面板還沒顯示（display:none）時量不到矩形，所以讀計算樣式的寬度與 right（兩者都由 data-layout 與語言決定）
+        const cs = getComputedStyle(panelBox);
+        const base = mode === 'short' ? 10 : 16;
+        const panelLeft = W - (parseFloat(cs.right) || base) - (parseFloat(cs.width) || panelBox.offsetWidth);
+        const tb = toolbarEl.getBoundingClientRect();
+        if (tb.right + 12 > panelLeft) panelTop = Math.max(0, tb.bottom + 8 - base);
       }
       root.style.setProperty('--stage-w', `${W}px`);
       root.style.setProperty('--stage-h', `${height}px`);
       root.style.setProperty('--band', `${band}px`);
+      root.style.setProperty('--panel-dy', `${panelTop}px`);
       last = { mode, width: W, height, rect };
       return last;
     },
@@ -266,6 +279,16 @@ async function main() {
     mountLangSwitch(document.getElementById('intro-card'), { onChange: setLanguage }),
     mountLangSwitch(document.getElementById('toolbar'), { onChange: setLanguage }),
   ];
+  // 工具列大小改變（切換語言、按鈕文字或粗細改變、視窗縮放造成換行）時重算取景；只在寬或高真的變了才觸發（resize 不會改變工具列大小，不會循環）
+  const toolbarBox = document.getElementById('toolbar');
+  let tbW = -1;
+  let tbH = -1;
+  new ResizeObserver(() => {
+    if (toolbarBox.offsetWidth === tbW && toolbarBox.offsetHeight === tbH) return;
+    tbW = toolbarBox.offsetWidth;
+    tbH = toolbarBox.offsetHeight;
+    view.resize();
+  }).observe(toolbarBox);
 
   const isPickable = (id) => {
     const o = getOrganelle(id);

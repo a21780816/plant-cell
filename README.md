@@ -25,7 +25,7 @@ npm run dev        # 開發：監看檔案並在本機提供預覽
 
 ```
 npm test           # 單元測試（不需要瀏覽器）
-npm run e2e        # 先建置，再用無介面 Chrome 跑端對端測試，約 7 分鐘
+npm run e2e        # 先建置，再用無介面 Chrome 跑端對端測試，約 8 分鐘
 ```
 
 端對端測試需要 `/Applications/Google Chrome.app`；截圖存到 `assets/preview/`（不納入版本控制）。

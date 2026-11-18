@@ -50,12 +50,12 @@ body {
 
 #panel {
   position: fixed;
-  top: 16px;
+  top: calc(16px + var(--panel-dy, 0px)); /* 與工具列在水平方向重疊時往下移（main.js 的版面計算） */
   right: 16px;
   z-index: 3;
   box-sizing: border-box;
   width: 340px;
-  max-height: calc(var(--stage-h) - 32px - var(--band)); /* 底部留給構造清單 */
+  max-height: calc(var(--stage-h) - 32px - var(--band) - var(--panel-dy, 0px)); /* 底部留給構造清單 */
   overflow-y: auto;
   padding: 24px 24px 22px;
   border: 1px solid var(--line);
@@ -557,10 +557,10 @@ body:not([data-phase="explore"]) #labels { display: none; }
 body[data-layout="short"] #toolbar { top: 10px; left: 10px; padding: 5px; gap: 4px; }
 body[data-layout="short"] #toolbar button { padding: 3px 11px; font-size: 13px; }
 body[data-layout="short"] #panel {
-  top: 10px;
+  top: calc(10px + var(--panel-dy, 0px));
   right: 10px;
   width: 300px;
-  max-height: calc(var(--stage-h) - 20px - var(--band));
+  max-height: calc(var(--stage-h) - 20px - var(--band) - var(--panel-dy, 0px));
   padding: 16px 18px 14px;
   font-size: 15px;
   line-height: 1.6;
@@ -646,3 +646,10 @@ html[lang="en"] body[data-layout="narrow"] #toolbar button { padding: 3px 7px; }
 html[lang="en"] body[data-layout="narrow"] #toolbar .lang-switch { margin-left: 3px; padding-left: 4px; gap: 3px; }
 /* 英文 narrow 的開場卡片：英文段落比中文長，390×800 會多出一小段需要捲動；只微調行高（字級維持 16px） */
 html[lang="en"] body[data-layout="narrow"] #intro-card .intro-text { line-height: 1.68; }
+/* 視窗寬度 380px 以下的 narrow：中英都用緊湊的工具列（與上面英文 narrow 同一組內距與間距），360 寬的手機才維持一列；
+   寬度大於 380px 的樣式不動 */
+@media (max-width: 380px) {
+  body[data-layout="narrow"] #toolbar { max-width: calc(100vw - 16px); gap: 3px; padding: 5px 6px; }
+  body[data-layout="narrow"] #toolbar button { padding: 3px 7px; }
+  body[data-layout="narrow"] #toolbar .lang-switch { margin-left: 3px; padding-left: 4px; gap: 3px; }
+}
