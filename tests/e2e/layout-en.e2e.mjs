@@ -315,6 +315,7 @@ for (const [W, H, layout] of [[1280, 800, 'wide'], [900, 420, 'short'], [390, 80
       assert.ok(body, '應有 .intro-body');
       console.log(`E5 ${layout} intro-body ${JSON.stringify(body)}`);
       assert.ok(body.lastBottom <= body.bodyBottom + 1, `最後一段應在 .intro-body 內：${JSON.stringify(body)}`);
+      if (layout === 'narrow') assert.ok(body.sh <= body.ch, `390×800 的英文開場卡片不需要捲動：${JSON.stringify(body)}`);
       await page.screenshot(`assets/preview/web-en-intro-${layout}.png`);
       assert.deepEqual(page.consoleErrors, []);
     } finally {

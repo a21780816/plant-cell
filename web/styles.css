@@ -644,3 +644,5 @@ html[lang="en"] body[data-layout="wide"] #panel { width: 380px; font-size: 14px;
 html[lang="en"] body[data-layout="narrow"] #toolbar { max-width: calc(100vw - 16px); gap: 3px; padding: 5px 6px; }
 html[lang="en"] body[data-layout="narrow"] #toolbar button { padding: 3px 7px; }
 html[lang="en"] body[data-layout="narrow"] #toolbar .lang-switch { margin-left: 3px; padding-left: 4px; gap: 3px; }
+/* 英文 narrow 的開場卡片：英文段落比中文長，390×800 會多出一小段需要捲動；只微調行高（字級維持 16px） */
+html[lang="en"] body[data-layout="narrow"] #intro-card .intro-text { line-height: 1.68; }
