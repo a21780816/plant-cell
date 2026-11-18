@@ -322,3 +322,27 @@ for (const [W, H, layout] of [[1280, 800, 'wide'], [900, 420, 'short'], [390, 80
     }
   });
 }
+
+// 改成 .intro-body 結構之前，最後一段與開始鈕之間的 margin 會折疊成開始鈕的 margin-top（wide／narrow 26、short 12）
+test('中文開場卡片：.intro-body 結構不改變既有間距（1280×800、900×420、390×800）', async () => {
+  for (const [W, H, layout, expected] of [[1280, 800, 'wide', 26], [900, 420, 'short', 12], [390, 800, 'narrow', 26]]) {
+    const page = await open(W, H);
+    try {
+      assert.equal(await page.evaluate('document.body.dataset.layout'), layout);
+      const m = await page.evaluate(`(() => {
+        const b = document.querySelector('#intro-card .intro-body');
+        const scroll = b.scrollHeight > b.clientHeight;
+        b.scrollTop = b.scrollHeight;
+        const ps = b.querySelectorAll('.intro-text');
+        const gap = document.getElementById('intro-start').getBoundingClientRect().top - ps[ps.length - 1].getBoundingClientRect().bottom;
+        return { scroll, gap };
+      })()`);
+      console.log(`zh intro ${layout} ${JSON.stringify(m)}`);
+      assert.ok(Math.abs(m.gap - expected) <= 0.5, `${layout}：最後一段到開始鈕的距離 ${m.gap} 應為 ${expected}`);
+      if (layout !== 'narrow') assert.equal(m.scroll, false, `${layout} 的中文 .intro-body 不需要捲動`);
+      assert.deepEqual(page.consoleErrors, []);
+    } finally {
+      await page.close();
+    }
+  }
+});

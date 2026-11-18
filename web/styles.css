@@ -474,6 +474,8 @@ body:not([data-phase="explore"]) #labels { display: none; }
 /* 只有段落區在卡片內捲動；標題、開始鈕、語言鈕固定看得到 */
 #intro-card > * { flex: none; }
 #intro-card > .intro-body { flex: 0 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+/* 原本最後一段的 margin-bottom 會與開始鈕的 margin-top 折疊；.intro-body 是獨立格式化環境，不再折疊，所以歸零以維持原間距 */
+#intro-card .intro-body .intro-text:last-child { margin-bottom: 0; }
 #intro.leaving #intro-card { transform: translateY(6px) scale(0.985); }
 #intro-title {
   margin: 0 0 18px;
