@@ -458,7 +458,8 @@ body:not([data-phase="explore"]) #labels { display: none; }
   box-sizing: border-box;
   width: min(520px, 92vw);
   max-height: 86vh;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   padding: 36px 40px 34px;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -468,9 +469,11 @@ body:not([data-phase="explore"]) #labels { display: none; }
   box-shadow: var(--shadow);
   color: var(--ink);
   touch-action: pan-y;
-  scrollbar-width: thin;
   transition: transform 0.3s ease;
 }
+/* 只有段落區在卡片內捲動；標題、開始鈕、語言鈕固定看得到 */
+#intro-card > * { flex: none; }
+#intro-card > .intro-body { flex: 0 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
 #intro.leaving #intro-card { transform: translateY(6px) scale(0.985); }
 #intro-title {
   margin: 0 0 18px;
@@ -633,3 +636,9 @@ body[data-layout="narrow"] #panel:not([hidden]) ~ #list-wrap { display: none; } 
 body[data-layout="narrow"] #quiz { bottom: auto; padding: 14px 18px 12px; }
 body[data-layout="narrow"] #quiz[data-mode="summary"] { padding: 18px 20px 20px; }
 body[data-layout="narrow"] #quiz[data-mode="summary"] #quiz-actions { margin-top: 14px; }
+
+/* ---- 英文模式的版面調整（英文字比中文長；一律以 html[lang="en"] 開頭，中文樣式不動）---- */
+html[lang="en"] body[data-layout="wide"] #panel { width: 380px; font-size: 14px; line-height: 1.55; }
+html[lang="en"] body[data-layout="narrow"] #toolbar { max-width: calc(100vw - 16px); gap: 3px; padding: 5px 6px; }
+html[lang="en"] body[data-layout="narrow"] #toolbar button { padding: 3px 7px; }
+html[lang="en"] body[data-layout="narrow"] #toolbar .lang-switch { margin-left: 3px; padding-left: 4px; gap: 3px; }

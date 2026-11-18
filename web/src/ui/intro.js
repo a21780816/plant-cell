@@ -14,6 +14,10 @@ export function mountIntro(root, { intro, onStart = () => {} }) {
   const title = document.createElement('h1');
   title.id = 'intro-title';
   card.append(title);
+  // 段落包在 .intro-body：卡片放不下時只有它在卡片內捲動，標題、開始鈕與語言鈕一直看得到
+  const body = document.createElement('div');
+  body.className = 'intro-body';
+  card.append(body);
   let paras = [];
   const start = document.createElement('button');
   start.id = 'intro-start';
@@ -30,7 +34,7 @@ export function mountIntro(root, { intro, onStart = () => {} }) {
       paras = next.paragraphs.map(() => {
         const p = document.createElement('p');
         p.className = 'intro-text';
-        card.insertBefore(p, start);
+        body.append(p);
         return p;
       });
     }
