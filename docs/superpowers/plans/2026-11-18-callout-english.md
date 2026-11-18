@@ -23,7 +23,7 @@
 - 指令（已核對 `package.json:7-11`）：單元單檔 `node --test tests/<名稱>.test.mjs`；單元全套 `npm test`（起點 `# pass 83`）。端對端單檔要先建置：`npm run build && node --test --test-concurrency=1 tests/e2e/<名稱>.e2e.mjs`，只跑一項再加 `--test-name-pattern="<名稱片段>"`。全套 `npm run e2e`（起點 43 項；加上本計畫新檔後約 8–10 分鐘，用背景執行或把逾時設 600000 ms）。改了 `web/` 一定要重新建置，端對端開的是 `dist/plant-cell.html`。
 - 殘留 Chrome 檢查：`pgrep -fl 'chrome-profile/p-' || echo 無殘留`，通過時只印「無殘留」；有殘留就 `pkill -f 'chrome-profile/p-'`，再查一次並寫進回報。
 - 端對端隔離：每個 `test()` 自己 `openPage`、在 `finally` 裡 `close()`（每次都是新的 Chrome 設定檔，localStorage 互不相通）；要一開始就是英文，用 `openPage` 的 `initScript: "try { localStorage.setItem('plant-cell-lang', 'en'); } catch {}"`；測試之間不得共用頁面。
-- 行號以本分支起點 `b5abfd4` 為準；前面任務改過的檔案行號會位移，以引號裡的程式片段定位。任務依序 1→5，每個任務只改自己 Files 列出的檔。截圖存 `assets/preview/`（不進版控）。
+- 行號以本分支起點 `4b594a7` 為準；前面任務改過的檔案行號會位移，以引號裡的程式片段定位。任務依序 1→5，每個任務只改自己 Files 列出的檔。截圖存 `assets/preview/`（不進版控）。
 
 ## Review Focus
 

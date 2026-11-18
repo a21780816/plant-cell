@@ -49,10 +49,10 @@
 6. Task 8 生物學內容核對（opus）：無高嚴重度錯誤；4 中 10 低，共 14 項。Ruling: 14 項全部採納（含用語改為國教院「高中以下」名詞：嵴→皺褶、間隙連接→隙型連結）— 規格要求台灣課本用語與正確性 — 錯了的代價：個別措辭可再調。清單在 task-8-factcheck-round1.md。
 7. Ruling: Task 3、4、5 與 Task 2 的修正同時進行 — 修正只動 export_glb 的內部行為、不改任何介面 — 錯了的代價：三個模組在匯出時多遇到一次明確的錯誤訊息。
 8. Ruling: 修法三件事——(1) 加深 RECESS 讓整顆核仁在剖面前方；(2) 染色質不得進入核仁前方沿 CAMERA_DIR 的圓柱範圍，並寫成 build 內的檢查；(3) palette 的 nucleolus.main 由 #54348F 改為 #A23B8C（計畫的配色區塊已同步修改並提交）— 規格 §4 要求「細胞核切開可見核仁」— 錯了的代價：配色可在檢查點一再調。
-9. Task 4: 實作者回報 DONE_WITH_CONCERNS（94,488 三角面；葉綠體剖面偏離中心 0.08）。Ruling: 疑慮屬觀察、照常送審；剖面偏移可接受（為放下 6 疊葉綠餅）。四模組合計約 264,700 三角面，低於 30 萬目標。主持人目視 energy.png 後提交 6f35145（BASE d800618）；任務審查（sonnet）進行中。Task 4 實作者 agent：a0e525d2548c7a9d8。
+9. Task 4: 實作者回報 DONE_WITH_CONCERNS（94,488 三角面；葉綠體剖面偏離中心 0.08）。Ruling: 疑慮屬觀察、照常送審；剖面偏移可接受（為放下 6 疊葉綠餅）。四模組合計約 264,700 三角面，低於 30 萬目標。主持人目視 energy.png 後提交 69a1e9c（BASE bbecd05）；任務審查（sonnet）進行中。Task 4 實作者 agent：a0e525d2548c7a9d8。
 10. Task 5 任務審查（sonnet）：需要修正。Important 5 項加自我檢查缺口，合併為 6 項（清單在 task-5-review-round1.md）：(1) _golgi_local 把所有 ValueError 當成排不下；(2) 孔洞輪廓公式重複兩份；(3) 孔洞切刀半高不足、RER 焊接後 57 條非流形邊；(4) 附著核糖體距核最小 1.166、無自檢；(5) RER 半邊限制無斷言、EDGE_MAX 寫死；(6) SER 距核上限只印不檢查。Ruling: 6 項全部採納。
 11. Ruling: Task 6 與 Task 5 第 2 輪複審同時進行 — 主持人已用複審者的腳本獨立驗證 A 項、目視驗證 B 項，且試組裝已成功 — 錯了的代價：若複審再開出問題，Task 5 第 3 輪與 Task 6 可能同時動到 endomembrane.py（已要求 Task 6 不改該檔）。
-12. Ruling: energy.py 的修改原則接受，但加門檻（超出量 ≤ 0.02 才丟 PlacementError，更大仍丟 ValueError），並把 __pycache__/、*.pyc 加進 .gitignore — 避免幾何錯誤被偽裝成放不下 — 已 resume 實作者 a8bd810a1ecd438af 補做，完成後再送任務審查（BASE 103aa09）。
+12. Ruling: energy.py 的修改原則接受，但加門檻（超出量 ≤ 0.02 才丟 PlacementError，更大仍丟 ValueError），並把 __pycache__/、*.pyc 加進 .gitignore — 避免幾何錯誤被偽裝成放不下 — 已 resume 實作者 a8bd810a1ecd438af 補做，完成後再送任務審查（BASE adc8818）。
 13. Ruling: 5 項全部採納。另加兩項主持人要求（因改版後模型變大、以及啟動失敗時測試要立刻看到原因）：(6) 陰影視錐與鏡頭距離由 index.center／index.radius 推導；(7) e2e 等 cellReady 或 cellError。液泡粗糙度 0.45 不改（計畫的 0.6–0.8 是指預設的不透明材質）。清單在 task-7-review-round1.md。
 14. Ruling: 鏡頭距離不採「調大係數」，改為依包圍盒 8 個角與畫面長寬比計算（純函式 fitDistance，加單元測試；視窗改變且使用者未動過鏡頭時重新取景）— 模型是扁的，用外接球會讓細胞顯得太小；同時解決窄螢幕 — 錯了的代價：取景餘裕可在檢查點後再調。
 15. Ruling: 新增「視線走廊」規則（SHOWCASE 六個構造朝 CAMERA_DIR 的圓柱內不得有隨機擺放的胞器），寫進計畫並提交；以 scratchpad/layout/corridor.mjs 模擬 300/300 成功 — 規格要求掀開的一角看得到代表構造 — 錯了的代價：少數種子需重抽。

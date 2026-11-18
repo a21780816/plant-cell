@@ -29,3 +29,7 @@ npm run e2e        # 先建置，再用無介面 Chrome 跑端對端測試，約
 ```
 
 端對端測試需要 `/Applications/Google Chrome.app`；截圖存到 `assets/preview/`（不納入版本控制）。
+
+## 授權
+
+[MIT](LICENSE)

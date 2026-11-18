@@ -1,7 +1,7 @@
 # 介紹卡片引線與英文版：主持人在製作過程中替使用者做的決定
 
 - 日期：2026-11-18
-- 範圍：分支 `feat/callout-english`（`main` 7d9450a 之後的提交）
+- 範圍：分支 `feat/callout-english`（`main` d0d2955 之後的提交）
 - 規格：`docs/superpowers/specs/2026-11-18-callout-english-design.md`
 - 計畫：`docs/superpowers/plans/2026-11-18-callout-english.md`
 
