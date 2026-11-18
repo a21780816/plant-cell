@@ -95,17 +95,30 @@ test('引線 wide（1280×800）：開場不顯示；選細胞核後起點在面
     const p = await projectOf(page, 'nucleus');
     assert.ok(dist(c, p) <= 2, `終點 ${c.x2},${c.y2} 應是錨點投影 ${p.x},${p.y}`);
     const dom = await page.evaluate(`(() => {
-      const l = document.querySelector('#callout line'), k = document.querySelector('#callout circle');
-      const ls = getComputedStyle(l), ks = getComputedStyle(k);
-      return { x1: +l.getAttribute('x1'), y1: +l.getAttribute('y1'), x2: +l.getAttribute('x2'), y2: +l.getAttribute('y2'),
-        cx: +k.getAttribute('cx'), cy: +k.getAttribute('cy'), r: k.getAttribute('r'), fill: ks.fill, stroke: ls.stroke, sw: ls.strokeWidth };
+      const kids = [...document.querySelectorAll('#callout > *')];
+      const [h, hd, l, k] = kids;
+      const num = (e, n) => +e.getAttribute(n);
+      const ln = (e) => [num(e, 'x1'), num(e, 'y1'), num(e, 'x2'), num(e, 'y2')];
+      const ls = getComputedStyle(l), ks = getComputedStyle(k), hs = getComputedStyle(h), hds = getComputedStyle(hd);
+      return { order: kids.map((e) => e.getAttribute('class')), main: ln(l), halo: ln(h),
+        dot: [num(k, 'cx'), num(k, 'cy')], haloDot: [num(hd, 'cx'), num(hd, 'cy')],
+        r: k.getAttribute('r'), hr: hd.getAttribute('r'), fill: ks.fill, dotStroke: ks.stroke,
+        stroke: ls.stroke, sw: ls.strokeWidth, haloStroke: hs.stroke, haloSw: hs.strokeWidth, haloFill: hds.fill };
     })()`);
-    assert.deepEqual([dom.x1, dom.y1, dom.x2, dom.y2], [c.x1, c.y1, c.x2, c.y2]);
-    assert.deepEqual([dom.cx, dom.cy], [c.x2, c.y2]);
-    assert.equal(dom.r, '3.5');
+    assert.deepEqual(dom.order, ['callout-halo', 'callout-dot-halo', 'callout-line', 'callout-dot']);
+    assert.deepEqual(dom.main, [c.x1, c.y1, c.x2, c.y2]);
+    assert.deepEqual(dom.halo, dom.main);
+    assert.deepEqual(dom.dot, [c.x2, c.y2]);
+    assert.deepEqual(dom.haloDot, dom.dot);
+    assert.equal(dom.r, '5');
+    assert.equal(dom.hr, '7.5');
     assert.equal(dom.fill, 'rgb(163, 150, 184)');
-    assert.equal(dom.stroke, 'rgba(52, 48, 42, 0.5)');
-    assert.equal(dom.sw, '1px');
+    assert.equal(dom.dotStroke, 'rgba(52, 48, 42, 0.8)');
+    assert.equal(dom.stroke, 'rgba(52, 48, 42, 0.8)');
+    assert.equal(dom.sw, '1.5px');
+    assert.equal(dom.haloStroke, 'rgba(251, 250, 248, 0.85)');
+    assert.equal(dom.haloSw, '4px');
+    assert.equal(dom.haloFill, 'rgba(251, 250, 248, 0.85)');
     await page.screenshot('assets/preview/web-callout-wide.png');
     const muts = await page.evaluate(`new Promise((res) => {
       let n = 0;

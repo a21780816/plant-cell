@@ -41,12 +41,18 @@ const NS = 'http://www.w3.org/2000/svg';
 
 // 只建立一次線與圓點；draw 只在值改變時寫 DOM。
 export function createCallout(svg) {
-  const line = document.createElementNS(NS, 'line');
-  line.setAttribute('class', 'callout-line');
-  const dotEl = document.createElementNS(NS, 'circle');
-  dotEl.setAttribute('class', 'callout-dot');
-  dotEl.setAttribute('r', '3.5');
-  svg.append(line, dotEl);
+  const mk = (tag, cls, attrs = {}) => {
+    const e = document.createElementNS(NS, tag);
+    e.setAttribute('class', cls);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+  };
+  // 建立順序就是疊放順序：淺色襯邊在下、深色線與圓點在上，才在深淺不同的背景上都看得見
+  const halo = mk('line', 'callout-halo');
+  const dotHalo = mk('circle', 'callout-dot-halo', { r: 7.5 });
+  const line = mk('line', 'callout-line');
+  const dotEl = mk('circle', 'callout-dot', { r: 5 });
+  svg.append(halo, dotHalo, line, dotEl);
   svg.style.display = 'none';
 
   let state = { ...HIDDEN };
@@ -59,10 +65,10 @@ export function createCallout(svg) {
       }
       const fresh = !state.visible; // 剛從隱藏轉為顯示：全部重寫一次
       if (fresh) svg.style.display = '';
-      if (fresh || geo.x1 !== state.x1) line.setAttribute('x1', geo.x1);
-      if (fresh || geo.y1 !== state.y1) line.setAttribute('y1', geo.y1);
-      if (fresh || geo.x2 !== state.x2) { line.setAttribute('x2', geo.x2); dotEl.setAttribute('cx', geo.x2); }
-      if (fresh || geo.y2 !== state.y2) { line.setAttribute('y2', geo.y2); dotEl.setAttribute('cy', geo.y2); }
+      if (fresh || geo.x1 !== state.x1) { line.setAttribute('x1', geo.x1); halo.setAttribute('x1', geo.x1); }
+      if (fresh || geo.y1 !== state.y1) { line.setAttribute('y1', geo.y1); halo.setAttribute('y1', geo.y1); }
+      if (fresh || geo.x2 !== state.x2) { for (const e of [line, halo]) e.setAttribute('x2', geo.x2); for (const e of [dotEl, dotHalo]) e.setAttribute('cx', geo.x2); }
+      if (fresh || geo.y2 !== state.y2) { for (const e of [line, halo]) e.setAttribute('y2', geo.y2); for (const e of [dotEl, dotHalo]) e.setAttribute('cy', geo.y2); }
       if (fresh || color !== fill) { dotEl.setAttribute('fill', color); fill = color; }
       state = { ...geo };
     },
