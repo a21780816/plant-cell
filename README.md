@@ -3,6 +3,8 @@
 用 Blender 建模、three.js 顯示的葉肉細胞。成品是單一檔案 `dist/plant-cell.html`，
 點兩下就能用 Chrome 離線開啟（不連網、不需要伺服器）。
 
+**線上展示：<https://a21780816.github.io/plant-cell/>**（用瀏覽器直接開啟，不用安裝）
+
 ## 使用
 
 - 開啟 `dist/plant-cell.html`，按「開始探索」掀開細胞壁。
@@ -29,6 +31,11 @@ npm run e2e        # 先建置，再用無介面 Chrome 跑端對端測試，約
 ```
 
 端對端測試需要 `/Applications/Google Chrome.app`；截圖存到 `assets/preview/`（不納入版本控制）。
+
+## 線上展示頁
+
+線上展示頁放在 `gh-pages` 分支，裡面只有打包好的 `index.html`（就是 `dist/plant-cell.html`）。
+原始碼改了之後它不會自動更新，要重新建置，再把新的 `dist/plant-cell.html` 放成該分支的 `index.html`。
 
 ## 授權
 
