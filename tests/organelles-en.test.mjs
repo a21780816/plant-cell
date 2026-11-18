@@ -49,6 +49,10 @@ test('英文字串不含中日韓文字與全形標點', () => {
   for (const s of allStrings()) assert.ok(!CJK.test(s), s);
 });
 
+test('英文字串只含 ASCII 與 α、β、µ', () => {
+  for (const s of allStrings()) assert.ok(!/[^\x00-\x7Fαβµ]/.test(s), s);
+});
+
 test('液泡保留「模型比實際小」的說明', () => {
   const v = ORGANELLES_EN.vacuole;
   assert.ok(/scale|proportion/i.test(`${v.body} ${v.fact}`));
